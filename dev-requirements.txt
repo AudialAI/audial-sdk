@@ -1,0 +1,20 @@
+# Install both production and development requirements
+-r requirements.txt
+
+# Testing requirements
+pytest>=6.0.0
+pytest-cov>=2.12.0
+pytest-mock>=3.6.0
+
+# Linting and formatting
+black>=21.5b2
+flake8>=3.9.0
+isort>=5.9.0
+
+# Documentation
+sphinx>=4.0.0
+sphinx-rtd-theme>=0.5.2
+
+# Build tools
+wheel>=0.36.0
+twine>=3.4.0
