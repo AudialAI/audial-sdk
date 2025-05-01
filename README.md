@@ -2,7 +2,7 @@
 
 A Python SDK for interacting with the Audial audio processing API.
 
-## Installation
+## Installation (still need to deploy on pypi)
 
 ```bash
 pip install audial-sdk
@@ -10,15 +10,11 @@ pip install audial-sdk
 
 ## Configuration
 
-You need to set your API key to use the Audial SDK. You can obtain an API key from the [Audial website](https://audial.io).
+You need to set your API key and User ID to use the Audial SDK. You can obtain an API key from the [Audial website](https://audialmusic.ai).
 
 There are several ways to set your API key:
 
 ### Environment Variable
-
-```bash
-export AUDIAL_API_KEY=your_api_key_here
-```
 
 ### .env File
 
@@ -26,6 +22,7 @@ Create a file named `.env` in your project root:
 
 ```
 AUDIAL_API_KEY=your_api_key_here
+AUDIAL_USER_ID=you_user_id_here
 ```
 
 ### Python Code
@@ -67,23 +64,7 @@ midi = audial.generate_midi("path/to/audio.mp3")
 The SDK also provides a command-line interface:
 
 ```bash
-# Stem splitting
-audial stem-split path/to/audio.mp3 --stems vocals,drums,bass,other
-
-# Audio analysis
-audial analyze path/to/audio.mp3
-
-# Segmentation
-audial segment path/to/audio.mp3
-
-# Mastering
-audial master path/to/audio.mp3
-
-# Sample pack generation
-audial generate-samples path/to/audio.mp3
-
-# MIDI generation
-audial generate-midi path/to/audio.mp3
+still need to fix these
 ```
 
 ## Results Management
@@ -103,4 +84,4 @@ audial config --results-folder path/to/custom/results/folder
 
 ## Documentation
 
-For detailed documentation and examples, see the [Audial SDK Documentation](https://audial.io/docs/sdk).
+For detailed documentation and examples, see the [Audial SDK Documentation](need to create page).
