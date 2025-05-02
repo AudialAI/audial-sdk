@@ -156,7 +156,6 @@ def analyze_command(args) -> Dict[str, Any]:
         print("\nAnalysis Results:")
         print(f"BPM: {result['analysis'].get('bpm')}")
         print(f"Key: {result['analysis'].get('key')}")
-        print(f"Execution ID: {result['analysis'].get('execution_id')}")
         print(f"\nResults saved to: {result['files']['folder']}")
         
         # Return the full result for programmatic use if needed
@@ -183,7 +182,6 @@ def master_command(args) -> Dict[str, Any]:
         
         # Print a summary of the results
         print("\nMastering Results:")
-        print(f"Execution ID: {result['execution'].get('exeId')}")
         print(f"Files downloaded: {len(result['files']['files'])}")
         print(f"\nResults saved to: {result['files']['folder']}")
         
@@ -211,7 +209,6 @@ def generate_midi_command(args) -> Dict[str, Any]:
         
         # Print a summary of the results
         print("\nMIDI Generation Results:")
-        print(f"Execution ID: {result['execution'].get('exeId')}")
         print(f"Files downloaded: {len(result['files']['files'])}")
         print(f"\nResults saved to: {result['files']['folder']}")
         
@@ -237,7 +234,6 @@ def generate_samples_command(args) -> Dict[str, Any]:
         
         # Print a summary of the results
         print("\nSample Generation Results:")
-        print(f"Execution ID: {result['execution'].get('exeId')}")
         print(f"Files downloaded: {len(result['files']['files'])}")
         print(f"\nResults saved to: {result['files']['folder']}")
         
@@ -267,7 +263,6 @@ def segment_command(args) -> Dict[str, Any]:
         
         # Print a summary of the results
         print("\nSegmentation Results:")
-        print(f"Execution ID: {result['execution'].get('exeId')}")
         print(f"Files downloaded: {len(result['files']['files'])}")
         print(f"\nResults saved to: {result['files']['folder']}")
         

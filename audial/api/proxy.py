@@ -693,9 +693,7 @@ class AudialProxy:
         
         url = f"{self.base_url}/functions/run/generate-midi"
         headers = get_auth_headers(self.api_key)
-        
-        print(f"Starting MIDI Generation")
-        
+                
         try:
             response = self.session.post(
                 url,

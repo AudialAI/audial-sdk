@@ -9,6 +9,8 @@ import json
 from urllib.parse import urlparse
 
 import requests
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from audial.api.proxy import AudialProxy
 from audial.api.constants import API_BASE_URL
@@ -58,19 +60,51 @@ def generate_midi(
         execution = proxy.create_execution()
         exe_id = execution["exeId"]
         
-        # Upload all files
+        # Upload all files concurrently
         files_info = []
-        for idx, path in enumerate(file_paths):
-            print(f"Uploading file {idx+1}/{len(file_paths)}: {path}")
-            file_data = proxy.upload_file(path)
-            filename = file_data.get("filename")
-            print(f"File uploaded: {filename}")
+        file_upload_results = {}  # Map to store results by index
+
+        # Helper function for uploading a file
+        def upload_file(idx, file_path):
+            try:
+                print(f"Uploading file {idx+1}/{len(file_paths)}: {file_path}")
+                file_data = proxy.upload_file(file_path)
+                filename = file_data.get("filename")
+                print(f"File uploaded: {filename}")
+                return {
+                    "index": idx,
+                    "name": filename,
+                    "url": file_data["url"]
+                }
+            except Exception as e:
+                print(f"Error uploading file {idx+1}: {str(e)}")
+                raise
+
+        # Use ThreadPoolExecutor for concurrent uploads
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            # Start all uploads
+            futures = {
+                executor.submit(upload_file, idx, path): idx 
+                for idx, path in enumerate(file_paths)
+            }
             
-            files_info.append({
-                "name": filename,
-                "url": file_data["url"]
-            })
-        
+            # Process uploads as they complete
+            for future in as_completed(futures):
+                try:
+                    result = future.result()
+                    file_upload_results[result["index"]] = result
+                except Exception as e:
+                    raise AudialError(f"File upload failed: {str(e)}")
+
+        # Ensure files are added to files_info in the original order
+        for idx in range(len(file_paths)):
+            if idx in file_upload_results:
+                result = file_upload_results[idx]
+                files_info.append({
+                    "name": result["name"],
+                    "url": result["url"]
+                })
+
         print(f"Uploaded {len(files_info)} file(s)")
         
         # If BPM is not provided, use default
@@ -165,7 +199,6 @@ def generate_midi(
             for midi_key, midi_info in result['midi'].items():
                 if isinstance(midi_info, dict) and 'url' in midi_info:
                     midi_urls.append(midi_info['url'])
-                    print(f"Found MIDI URL in response: {midi_info['url']}")
         
         # If no MIDI URLs found, construct them based on the file patterns
         if not midi_urls:
