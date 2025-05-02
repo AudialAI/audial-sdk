@@ -1,12 +1,11 @@
 """
-Fixed stem splitting implementation with correct URL construction.
+Fixed stem splitting implementation with correct URL construction and polling for all stems.
 """
 
 from typing import List, Dict, Any, Optional, Union
 import os
 import time
 import json
-import random
 from urllib.parse import urlparse
 
 from audial.api.proxy import AudialProxy
@@ -18,6 +17,37 @@ from audial.api.constants import (
 )
 from audial.api.exceptions import AudialError, AudialAPIError
 from audial.utils.config import get_api_key, get_results_folder, get_user_id
+
+def are_all_stems_complete(available_stems, requested_stems):
+    """
+    Check if all requested stems are present in the available stems.
+    
+    Args:
+        available_stems (dict): The stems available in the execution result.
+        requested_stems (list): The list of stems that were requested.
+        
+    Returns:
+        bool: True if all requested stems are present, False otherwise.
+    """
+    # Normalization function: remove spaces, underscores, and a trailing "mp3" (case-insensitive)
+    def normalize(stem_name):
+        return stem_name.lower().replace("_", "").replace(" ", "").replace("mp3", "")
+    
+    # For each requested stem, if it starts with "full_song_without_", 
+    # we expect the API to return a stem with key "no" + (the rest) normalized.
+    expected_files = []
+    for stem in requested_stems:
+        if stem.startswith("full_song_without_"):
+            # For "full_song_without_vocals", expect "no_vocals" or "novocals"
+            expected_files.append(normalize(f"no_{stem.replace('full_song_without_', '')}"))
+        else:
+            expected_files.append(normalize(stem))
+    
+    # Normalize available stem keys from the API response
+    available_stem_types = [normalize(key) for key in available_stems.keys()]
+    
+    # Check if all expected files are in the available stems
+    return all(exp in available_stem_types for exp in expected_files)
 
 def stem_split(
     file_path: str,
@@ -74,16 +104,17 @@ def stem_split(
     
     # Execute workflow
     try:
-        print("Creating execution...")
+        # Create execution
         execution = proxy.create_execution()
         exe_id = execution["exeId"]
-        print(f"Execution created with ID: {exe_id}")
         
+        # Upload file
         print(f"Uploading file: {file_path}")
         file_data = proxy.upload_file(file_path)
         print(f"File uploaded: {file_data.get('filename')}")
         filename = file_data.get("filename")
         
+        # Run primary analysis
         print("Running primary analysis...")
         analysis = proxy.run_primary_analysis(exe_id, file_data["url"])
         
@@ -111,73 +142,58 @@ def stem_split(
         # Ensure we have non-null BPM and key values
         if bpm is None:
             bpm = 120  # Default BPM
-            print("WARNING: Using default BPM of 120")
             
         if key is None:
             key = "C"  # Default key
-            print("WARNING: Using default key of C")
         
         # Prepare stem request payload
-        print(f"Starting stem splitting with stems: {stems}")
-        stem_request = {
-            "userId": user_id,
-            "original": {
-                "filename": filename,
-                "url": file_data["url"],
-                "type": file_data.get("type", "audio/mpeg"),
-                "bpm": bpm,
-                "key": key
-            },
-            "splitStemsRequest": {
-                "targetBPM": target_bpm,
-                "targetKey": target_key,
-                "modelName": algorithm,
-                "originalBPM": bpm,
-                "originalKey": key,
-                "stemsRequested": stems
-            }
+        original_file = {
+            "filename": filename,
+            "url": file_data["url"],
+            "type": file_data.get("type", "audio/mpeg"),
+            "bpm": bpm,
+            "key": key
         }
         
-        print(f"Sending stem request: {json.dumps(stem_request, indent=2)}")
+        # Run stem splitting
+        print("Running stem splitter... For longer audio this may take up to 2 minutes")
+        response = None
+        new_exe_id = exe_id
         
         try:
             # Run stem splitting
-            stem_result = proxy.run_stem_splitter(
+            response = proxy.run_stem_splitter(
                 exe_id,
-                stem_request["original"],
+                original_file,
                 stems,
                 target_bpm,
                 target_key
             )
-            print("Stem splitting initiated successfully")
             
-            # Check if we got an immediate result
-            if isinstance(stem_result, dict):
-                print("Received stem splitting result")
-                result = stem_result
-                # Store the execution ID for polling
-                new_exe_id = stem_result.get("exeId", exe_id)
+            # Check if execution ID is returned
+            if isinstance(response, dict) and "exeId" in response:
+                new_exe_id = response["exeId"]
+                
+            # Check if stems are already available (unlikely for full request)
+            if isinstance(response, dict) and "stem" in response and response["stem"]:
+                # We have immediate results, no need to poll
+                result = response
             else:
-                # If no immediate result, we'll need to poll
-                result = None
-                new_exe_id = exe_id
+                # No immediate stems, need to poll
+                response = None
                 
         except Exception as e:
-            print(f"Warning: Stem splitting request returned an error: {str(e)}")
-            print("Will continue to check execution status in case processing is still occurring...")
-            result = None
-            new_exe_id = exe_id
+            response = None
         
-        # If we don't have a result yet, poll for it
-        if result is None:
-            print(f"Polling for execution completion with ID: {new_exe_id}")
-            
+        # If we need to poll for results
+        if response is None or "stem" not in response or not response["stem"]:
             # Configure polling parameters
-            max_retries = 20
+            max_retries = 30
             backoff = 5  # Initial backoff in seconds
             max_backoff = 30  # Maximum backoff in seconds
-            max_processing_time = 10 * 60  # 10 minutes timeout
+            max_processing_time = 15 * 60  # 15 minutes timeout
             start_time = time.time()
+            result = None
             
             for attempt in range(max_retries):
                 # Check for timeout
@@ -187,30 +203,43 @@ def stem_split(
                     raise AudialError(f"Processing timed out after {int(elapsed)} seconds")
                 
                 try:
-                    print(f"Checking execution status (attempt {attempt+1}/{max_retries})...")
-                    result = proxy.get_execution(new_exe_id)
+                    execution_result = proxy.get_execution(new_exe_id)
                     
-                    state = result.get("state")
-                    print(f"Current state: {state}")
+                    state = execution_result.get("state")
                     
+                    # Check if execution has stem data
+                    stems_data = execution_result.get("stem", {})
+                    if stems_data and isinstance(stems_data, dict):
+                        result = execution_result
+                        
+                        # Check if all requested stems are present
+                        if are_all_stems_complete(stems_data, stems):
+                            print("All requested stems are complete!")
+                            break
+                            
                     # Check if execution is completed
                     if state == "completed":
-                        print("Processing completed successfully!")
-                        break
-                        
+                        # Even if state is completed, double-check if all stems are present
+                        if "stem" in execution_result and isinstance(execution_result["stem"], dict):
+                            result = execution_result
+                            if are_all_stems_complete(execution_result["stem"], stems):
+                                print("All requested stems are complete!")
+                                break
+                                
                     # Check if execution failed
                     elif state == "failed":
-                        error = result.get("error", "Unknown error")
+                        error = execution_result.get("error", "Unknown error")
                         raise AudialError(f"Stem splitting failed: {error}")
                     
                     # If not complete, wait with backoff
                     wait_time = min(max_backoff, backoff * (1 + attempt * 0.1))
-                    print(f"Processing in progress... Waiting {wait_time:.1f} seconds (elapsed: {int(elapsed)}s)")
                     time.sleep(wait_time)
                     
                 except Exception as e:
-                    print(f"Error checking status: {str(e)}")
                     time.sleep(backoff)
+        else:
+            # We already got results from the initial API call
+            result = response
         
         # At this point, we should have a result with stem data
         if not result or not isinstance(result, dict):
@@ -222,7 +251,6 @@ def stem_split(
             
         # Successfully got stems! Now we need to construct the URLs
         stems_data = result["stem"]
-        print(f"Found {len(stems_data)} stems in the execution result")
         
         # Construct the stem URLs following the API pattern from OpenAPI spec
         # Format: /files/{userId}/execution/{exeId}/{filetype}/{filename}
@@ -252,8 +280,6 @@ def stem_split(
                 # If the stem_info is a dict, add the URL to it for reference
                 if isinstance(stem_info, dict):
                     stem_info["url"] = stem_url
-        
-        print(f"Constructed {len(stem_urls)} stem URLs")
         
         # Download the stem files
         print("Downloading stem files...")

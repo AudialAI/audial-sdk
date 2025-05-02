@@ -163,11 +163,7 @@ class AudialProxy:
                 json={},  # Empty body is fine for this endpoint
                 timeout=REQUEST_TIMEOUT
             )
-            
-            try:
-                print(f"Execution response body: {response.text}")
-            except:
-                print("Could not print response body")
+        
             
             # Check for errors
             if response.status_code == 401 or response.status_code == 403:
@@ -275,9 +271,7 @@ class AudialProxy:
             "userId": user_id,
             "fileURL": file_url
         }
-        
-        print(f"Running primary analysis to find Key and BPM")
-        
+                
         try:
             response = self.session.post(
                 url,
@@ -285,11 +279,6 @@ class AudialProxy:
                 json=data,
                 timeout=REQUEST_TIMEOUT
             )
-            
-            try:
-                print(f"Analysis response body: {response.text}")
-            except:
-                print("Could not print response body")
             
             # Check for errors
             if response.status_code == 401 or response.status_code == 403:
@@ -307,7 +296,6 @@ class AudialProxy:
                 raise AudialAPIError(error_message)
             
             result = response.json()
-            print(f"Primary analysis result: {result}")
             
             # For primary analysis, we need to check if the result has the expected structure
             # The API might return the data in different formats
@@ -417,11 +405,6 @@ class AudialProxy:
                 timeout=REQUEST_TIMEOUT * 2  # Longer timeout for processing
             )
             
-            try:
-                print(f"Stem split response body: {response.text[:500]}...")  # First 500 chars
-            except:
-                print("Could not print response body")
-            
             # Check for errors
             if response.status_code == 401 or response.status_code == 403:
                 raise AudialAuthError(f"Authentication failed: {response.status_code}")
@@ -519,11 +502,6 @@ class AudialProxy:
                 timeout=300  # 2 minutes timeout - longer than default
             )
             
-            try:
-                print(f"Segmentation response body: {response.text[:500]}...")
-            except:
-                print("Could not print response body")
-            
             # Check for errors
             if response.status_code == 401 or response.status_code == 403:
                 raise AudialAuthError(f"Authentication failed: {response.status_code}")
@@ -543,7 +521,6 @@ class AudialProxy:
             
         except requests.exceptions.Timeout:
             # Handle timeout explicitly - indicate processing is in progress
-            print("Segmentation is likely still running.")
             return {
                 "exeId": exe_id,  # Return the original execution ID when we time out
                 "state": "processing"            }
@@ -670,7 +647,6 @@ class AudialProxy:
                 
         except requests.exceptions.Timeout:
             # Handle timeout explicitly - this is expected for long-running operations
-            print("Sample Pack Generation is still running.")
             return {
                 "exeId": exe_id,  # Return the original execution ID when we time out
                 "state": "processing",
@@ -728,11 +704,6 @@ class AudialProxy:
                 timeout=REQUEST_TIMEOUT * 2  # Longer timeout for processing
             )
             
-            try:
-                print(f"MIDI generation response body preview: {response.text[:200]}...")
-            except:
-                print("Could not print response body")
-            
             # Check for errors
             if response.status_code == 401 or response.status_code == 403:
                 raise AudialAuthError(f"Authentication failed: {response.status_code}")
@@ -776,10 +747,6 @@ class AudialProxy:
                 timeout=REQUEST_TIMEOUT
             )
             
-            try:
-                print(f"Get execution response body preview: {response.text[:200]}...")
-            except:
-                print("Could not print response body")
             
             # Check for errors
             if response.status_code == 401 or response.status_code == 403:

@@ -114,7 +114,7 @@ source audial-env/bin/activate  # Linux/macOS
 # or
 audial-env\Scripts\activate  # Windows
 
-# Install the SDK
+# Install the SDK (not going to work yet)
 pip install audial-sdk
 ```
 
@@ -123,7 +123,7 @@ pip install audial-sdk
 If you encounter permission errors during installation:
 
 ```bash
-# Install for the current user only
+# Install for the current user only (not going to work yet)
 pip install --user audial-sdk
 ```
 

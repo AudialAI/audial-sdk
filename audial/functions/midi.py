@@ -94,11 +94,8 @@ def generate_midi(
             midi_result = proxy.run_generate_midi(exe_id, midi_request)
             
             if isinstance(midi_result, dict):
-                print("Received initial MIDI response")
-                print(f"Response: {json.dumps(midi_result, indent=2)}")
                 result = midi_result
             else:
-                print("No immediate result, will poll for completion")
                 result = None
         except Exception as e:
             print(f"Warning: MIDI generation request returned an error: {str(e)}")
@@ -120,7 +117,6 @@ def generate_midi(
         
         # If we don't have MIDI data yet, poll for it
         if not has_midi_data(result):
-            print(f"Polling for MIDI data with execution ID: {exe_id}")
             
             for attempt in range(max_retries):
                 # Check for timeout
@@ -135,7 +131,6 @@ def generate_midi(
                     
                     # Check for MIDI data in main execution response
                     if has_midi_data(exec_data):
-                        print("Found MIDI data in execution response!")
                         result = exec_data
                         break
                     
