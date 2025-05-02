@@ -1,6 +1,6 @@
 # Audial SDK
 
-![Audial Logo](https://your-logo-url-here.png)
+![Audial Logo](./assets/Rectangle 110447.png)
 
 A powerful Python SDK for audio analysis and manipulation through the Audial API.
 
