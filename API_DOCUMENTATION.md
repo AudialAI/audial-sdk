@@ -27,7 +27,7 @@ This document provides comprehensive documentation for the Audial SDK, including
 
 ### Configuration
 
-#### Setting API Key and User ID
+#### Setting API Key
 
 ```python
 import audial
@@ -35,12 +35,8 @@ import audial
 # Set API key
 audial.config.set_api_key("your_api_key_here")
 
-# Set User ID
-audial.config.set_user_id("your_user_id_here")
-
-# Get current API key and User ID
+# Get current API key
 api_key = audial.config.get_api_key()
-user_id = audial.config.get_user_id()
 ```
 
 #### Setting Results Folder
@@ -456,12 +452,6 @@ audial config show
 
 ```bash
 audial config --api-key your_api_key_here
-```
-
-#### Set User ID
-
-```bash
-audial config --user-id your_user_id_here
 ```
 
 #### Set Results Folder
