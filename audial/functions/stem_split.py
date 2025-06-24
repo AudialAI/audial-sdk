@@ -104,15 +104,15 @@ def stem_split(
     
     # Execute workflow
     try:
-        # Create execution
-        execution = proxy.create_execution()
-        exe_id = execution["exeId"]
-        
-        # Upload file
+        # Upload file FIRST
         print(f"Uploading file: {file_path}")
         file_data = proxy.upload_file(file_path)
         print(f"File uploaded: {file_data.get('filename')}")
         filename = file_data.get("filename")
+        
+        # Create execution with the original file data
+        execution = proxy.create_execution('stem', original=file_data)
+        exe_id = execution["exeId"]
         
         # Run primary analysis
         print("Running primary analysis...")
@@ -283,7 +283,7 @@ def stem_split(
         
         # Download the stem files
         print("Downloading stem files...")
-        result_folder = os.path.join(results_dir, f"{result_exe_id}_{EXECUTION_TYPE_STEM}")
+        result_folder = os.path.join(results_dir, f"{filename}_{EXECUTION_TYPE_STEM}")
         os.makedirs(result_folder, exist_ok=True)
         
         downloaded_files = {}

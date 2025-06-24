@@ -81,7 +81,7 @@ def segment(
         if not os.path.isfile(file_path):
             raise AudialError(f"File not found: {file_path}")
         
-        execution = proxy.create_execution()
+        execution = proxy.create_execution('segmentation')
         exe_id = execution["exeId"]
         
         print(f"Uploading file: {file_path}")
@@ -182,7 +182,7 @@ def segment(
             file_urls["segmentation_audio"] = stem_status["original"]["url"]
         
         # Now run the segmentation - ONLY ONCE
-        print("Running segmentation...")
+        # print("Running segmentation...")
         
         # Update the original file info for segmentation
         original_file.update({

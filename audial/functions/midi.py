@@ -57,7 +57,7 @@ def generate_midi(
     
     # Execute workflow
     try:
-        execution = proxy.create_execution()
+        execution = proxy.create_execution('midi')
         exe_id = execution["exeId"]
         
         # Upload all files concurrently
@@ -246,7 +246,7 @@ def generate_midi(
                 
                 # Use the same headers as in your other API calls
                 headers = {
-                    "Authorization": f"Bearer {api_key}",
+                    # "Authorization": f"Bearer {api_key}",
                     "x-api-key": api_key,
                     "x-user-id": user_id
                 }

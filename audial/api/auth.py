@@ -107,10 +107,11 @@ def get_auth_headers(api_key: str = None) -> Dict[str, str]:
     # Return headers matching exactly what the frontend sends
     # This is critical - including both x-api-key and Authorization headers,
     # as well as the required x-user-id header
+    # print(f"Using API Key: {api_key}, Using x-user-id: {user_id}")
     return {
-        "Authorization": f"Bearer {api_key}",
+        # "Authorization": f"Bearer {api_key}",
         "x-api-key": api_key,
-        "x-user-id": user_id,  # Now using configured user ID instead of hardcoded value
+        "x-user-id": user_id,  
         "Content-Type": "application/json",
         "X-Request-ID": request_id
     }

@@ -14,7 +14,7 @@ from audial.functions.midi import generate_midi
 from audial.functions.samples import generate_samples
 from audial.functions.segment import segment
 from audial.functions.stem_split import stem_split
-from audial.utils.config import get_api_key, get_results_folder, set_api_key, set_results_folder
+from audial.utils.config import get_api_key, get_results_folder, set_api_key, set_results_folder, get_user_id, set_user_id  # Add the user_id functions
 from audial.api.exceptions import AudialError
 
 
@@ -138,6 +138,7 @@ def setup_config_parser(subparsers):
         help='Configure Audial SDK settings'
     )
     parser.add_argument('--api-key', help='Set the API key')
+    parser.add_argument('--user-id', help='Set the user ID')  # Add this line
     parser.add_argument('--results-folder', help='Set the results folder path')
     parser.add_argument('--show', action='store_true', help='Show current configuration')
     parser.set_defaults(func=config_command)
@@ -310,6 +311,11 @@ def config_command(args) -> None:
             set_api_key(args.api_key)
             print(f"API key has been set")
         
+        # Set user ID if provided
+        if args.user_id:  # Add this block
+            set_user_id(args.user_id)
+            print(f"User ID has been set")
+        
         # Set results folder if provided
         if args.results_folder:
             # Ensure the directory exists
@@ -318,8 +324,9 @@ def config_command(args) -> None:
             print(f"Results folder set to: {args.results_folder}")
         
         # Show current configuration if requested or if no other options provided
-        if args.show or (not args.api_key and not args.results_folder):
+        if args.show or (not args.api_key and not args.user_id and not args.results_folder):
             current_api_key = get_api_key()
+            current_user_id = get_user_id()  # Add this
             current_results_folder = get_results_folder()
             
             print("\nCurrent Configuration:")
@@ -329,6 +336,12 @@ def config_command(args) -> None:
                 print(f"API Key: {masked_key}")
             else:
                 print("API Key: Not set")
+            
+            # Print user ID
+            if current_user_id:  # Add this block
+                print(f"User ID: {current_user_id}")
+            else:
+                print("User ID: Not set")
             
             print(f"Results Folder: {current_results_folder}")
     

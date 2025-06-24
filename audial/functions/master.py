@@ -52,7 +52,7 @@ def master(
     
     # Execute workflow
     try:
-        execution = proxy.create_execution()
+        execution = proxy.create_execution('master')
         exe_id = execution["exeId"]
         
         # Function to upload a file and return its data
@@ -239,7 +239,7 @@ def master(
                         
             # Use the same headers as in your other API calls
             headers = {
-                "Authorization": f"Bearer {api_key}",
+                # "Authorization": f"Bearer {api_key}",
                 "x-api-key": api_key,
                 "x-user-id": user_id
             }

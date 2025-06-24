@@ -141,9 +141,13 @@ class AudialProxy:
         # Parse response
         return response.json()
     
-    def create_execution(self) -> Dict[str, Any]:
+    def create_execution(self, exe_type: str, original: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Create a new execution.
+        
+        Args:
+            exe_type (str): The type of execution to create (e.g., 'analysis', 'stem', 'midi', etc.)
+            original (Dict[str, Any], optional): The original file data if available
         
         Returns:
             Dict[str, Any]: The created execution.
@@ -155,15 +159,19 @@ class AudialProxy:
         url = f"{self.base_url}/db/{user_id}/execution"
         headers = get_auth_headers(self.api_key)
         
+        # Build request body
+        body = {"exeType": exe_type}
+        if original:
+            body["original"] = original
+        
         try:
             # Use PUT method as specified in OpenAPI spec
             response = self.session.put(
                 url,
                 headers=headers,
-                json={},  # Empty body is fine for this endpoint
+                json=body,
                 timeout=REQUEST_TIMEOUT
             )
-        
             
             # Check for errors
             if response.status_code == 401 or response.status_code == 403:
@@ -175,8 +183,11 @@ class AudialProxy:
                     error_data = response.json()
                     if isinstance(error_data, dict) and "error" in error_data:
                         error_message = f"API error: {error_data['error']}"
+                    elif isinstance(error_data, dict) and "message" in error_data:
+                        error_message = f"API error: {error_data['message']}"
                 except (ValueError, KeyError):
-                    pass
+                    # If JSON parsing fails, use the text response
+                    error_message = f"API error: {response.status_code} - {response.text}"
                 
                 raise AudialAPIError(error_message)
             
@@ -269,7 +280,8 @@ class AudialProxy:
         
         data = {
             "userId": user_id,
-            "fileURL": file_url
+            "fileURL": file_url,
+            "exeId": exe_id  # Add the execution ID to the request
         }
                 
         try:
@@ -464,6 +476,7 @@ class AudialProxy:
             "job_type": "segment_analysis",
             "userId": user_id,
             "user_id": user_id,  # Include both formats for compatibility
+            "exeId": exe_id,
             "original": original_file,
             "segmentationParameters": {
                 "components": components,
@@ -491,7 +504,7 @@ class AudialProxy:
         url = f"{self.base_url}/functions/run/segmentation"
         headers = get_auth_headers(self.api_key)
         
-        print(f"Running Segmentation")
+        print(f"Running Segmentation...")
         
         try:
             # Use a longer timeout but don't retry

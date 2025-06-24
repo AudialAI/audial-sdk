@@ -158,7 +158,7 @@ def generate_samples(
         if not os.path.isfile(file_path):
             raise AudialError(f"File not found: {file_path}")
         
-        execution = proxy.create_execution()
+        execution = proxy.create_execution('sample')
         exe_id = execution["exeId"]
         
         print(f"Uploading file: {file_path}")

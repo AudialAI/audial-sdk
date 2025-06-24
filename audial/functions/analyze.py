@@ -43,17 +43,19 @@ def analyze(
     
     # Execute workflow
     try:
-        execution = proxy.create_execution()
-        exe_id = execution["exeId"]
-        
+        # Upload the file FIRST
         print(f"Uploading file: {file_path}")
         file_data = proxy.upload_file(file_path)
         filename = file_data.get("filename")
         print(f"File uploaded: {filename}")
         
+        # Create execution with the original file data
+        execution = proxy.create_execution('analysis', original=file_data)
+        exe_id = execution["exeId"]
+        
         print("Running primary analysis...")
         analysis_result = proxy.run_primary_analysis(exe_id, file_data["url"])
-        print(f"Primary analysis result: {analysis_result}")
+        print(analysis_result)
         
         # Extract BPM and key from analysis response
         bpm = None
@@ -83,7 +85,7 @@ def analyze(
                     key = analysis_result['original']['key']
                 
         # Print the analysis results
-        print(f"Analysis completed: BPM={bpm}, Key={key}")
+        # print(f"Analysis completed: BPM={bpm}, Key={key}")
         
         # If we don't have bpm or key yet, and have an analysis execution ID,
         # try to get more details from the analysis execution
