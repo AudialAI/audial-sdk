@@ -222,7 +222,13 @@ def generate_midi(
         
         # Download the MIDI files with retry logic
         print("Downloading MIDI files...")
-        result_folder = os.path.join(results_dir, f"{exe_id}_midi")
+        # Use the first file's name for the folder (or combine them if multiple)
+        if len(file_paths) == 1:
+            original_filename = os.path.basename(file_paths[0])
+            result_folder = os.path.join(results_dir, f"{original_filename}_midi")
+        else:
+            # Multiple files - use a combined name or just "multi_files"
+            result_folder = os.path.join(results_dir, f"multi_files_midi")
         os.makedirs(result_folder, exist_ok=True)
         
         downloaded_files = {}

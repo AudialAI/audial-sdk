@@ -46,3 +46,7 @@ Thumbs.db
 
 # Project specific
 test_results/audial_results/
+__pycache__/
+*.egg-info/
+dist/
+build/

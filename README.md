@@ -102,7 +102,7 @@ audial config --user-id your_user_id_here
 audial config --results-folder path/to/results/folder
 
 # Show current configuration
-audial config show
+audial config --show
 ```
 
 ### Option 4: Python Code
@@ -136,7 +136,7 @@ You can verify that the SDK is correctly installed and configured:
 python -c "import audial; print(audial.__version__)"
 
 # Check configuration
-audial config show
+audial config --show
 ```
 
 ## Troubleshooting Installation
@@ -319,7 +319,7 @@ audial generate-midi audio.mp3 --bpm 120
 audial config --api-key your_api_key_here
 audial config --user-id your_user_id_here
 audial config --results-folder path/to/results
-audial config show
+audial config --show
 ```
 
 ## Result Format

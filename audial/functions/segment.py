@@ -308,7 +308,8 @@ def segment(
             raise AudialError("Segmentation did not produce expected results")
         
         # Create result folder
-        result_folder = os.path.join(results_dir, f"{segment_exe_id}_segmentation")
+        original_filename = os.path.basename(file_path)
+        result_folder = os.path.join(results_dir, f"{original_filename}_segmentation")
         os.makedirs(result_folder, exist_ok=True)
         
         downloaded_files = {}

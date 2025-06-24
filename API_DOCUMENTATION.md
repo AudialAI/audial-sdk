@@ -449,7 +449,7 @@ The Audial SDK provides a command-line interface for all its functions.
 #### Show Current Configuration
 
 ```bash
-audial config show
+audial config --show
 ```
 
 #### Set API Key

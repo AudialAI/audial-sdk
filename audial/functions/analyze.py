@@ -123,7 +123,8 @@ def analyze(
                     analysis_data[k] = value
         
         # Save analysis data to JSON file
-        result_folder = os.path.join(results_dir, f"{exe_id}_analysis")
+        original_filename = os.path.basename(file_path)
+        result_folder = os.path.join(results_dir, f"{original_filename}_analysis")
         os.makedirs(result_folder, exist_ok=True)
         
         analysis_file_path = os.path.join(result_folder, "analysis.json")
