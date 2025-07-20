@@ -4,8 +4,8 @@ Constants for the Audial API.
 
 # Base API URL - using the auth server as proxy
 # This endpoint will be responsible for routing to the actual API endpoints
-API_BASE_URL = "https://starfish-app-2x28e.ondigitalocean.app/api"
-AUTH_SERVER_URL = "https://starfish-app-2x28e.ondigitalocean.app/api/proxy"
+API_BASE_URL = "https://audial-api-prod-czos6.ondigitalocean.app/api"
+AUTH_SERVER_URL = "https://audial-api-prod-czos6.ondigitalocean.app/api/proxy"
 
 # Function names as defined in the API
 FUNCTION_STEM_SPLITTER = "stem-splitter"

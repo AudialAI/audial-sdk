@@ -26,7 +26,7 @@ from audial.utils.file_utils import get_mime_type
 from audial.utils.config import get_user_id
 
 # Define the base API URL directly
-API_BASE_URL = "https://starfish-app-2x28e.ondigitalocean.app/api"
+API_BASE_URL = "https://audial-api-prod-czos6.ondigitalocean.app/api"
 
 class AudialProxy:
     """Proxy client for the Audial API."""
