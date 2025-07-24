@@ -381,4 +381,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Support
 
-For issues, questions, or feedback, please [create an issue](https://github.com/audial/audial-sdk/issues) on our GitHub repository or contact support@audial.io.
+For issues, questions, or feedback, please [create an issue](https://github.com/audial/audial-sdk/issues) on our GitHub repository or contact contact@audialmusic.ai.
