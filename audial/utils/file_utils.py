@@ -3,6 +3,7 @@ File utility functions for the Audial SDK.
 """
 
 import os
+import re
 from pathlib import Path
 from typing import Optional
 import requests
@@ -70,6 +71,30 @@ def create_results_dir(base_dir: str, execution_id: str, result_type: str) -> st
     result_dir = os.path.join(base_dir, f"{execution_id}_{result_type}")
     os.makedirs(result_dir, exist_ok=True)
     return result_dir
+
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitize a filename for execution-scoped uploads
+    (PUT .../execution/{exeId}/{filetype}/{filename}).
+
+    The server keys the stored file on this filename, so it is restricted to
+    the stem [A-Za-z0-9_-] plus a lowercase extension: any other character
+    (spaces, unicode, punctuation) is replaced with "_". A stem that sanitizes
+    to nothing falls back to "file".
+
+    Args:
+        filename (str): The original filename (basename or full path).
+
+    Returns:
+        str: The sanitized filename, safe for the reference/midi/melody/
+            word-timestamps upload endpoints.
+    """
+    filename = os.path.basename(filename)
+    stem, ext = os.path.splitext(filename)
+    stem = re.sub(r"[^A-Za-z0-9_-]", "_", stem).strip("_") or "file"
+    ext = re.sub(r"[^A-Za-z0-9]", "", ext).lower()
+    return f"{stem}.{ext}" if ext else stem
+
 
 def get_mime_type(file_path: str) -> str:
     """

@@ -18,30 +18,50 @@ from audial.api.constants import (
     DEFAULT_POLLING_INTERVAL,
     MAX_RETRIES,
     REQUEST_TIMEOUT,
-    AUTH_SERVER_URL
+    get_api_base_url,
 )
 from audial.api.auth import get_auth_headers
-from audial.api.exceptions import AudialAPIError, AudialAuthError
-from audial.utils.file_utils import get_mime_type
+from audial.api.exceptions import AudialAPIError, AudialAuthError, SubscriptionRequiredError
+from audial.utils.file_utils import get_mime_type, sanitize_filename
 from audial.utils.config import get_user_id
 
-# Define the base API URL directly
-API_BASE_URL = "https://audial-api-prod-czos6.ondigitalocean.app/api"
+
+def _check_subscription_required(response: "requests.Response") -> None:
+    """
+    Raise SubscriptionRequiredError if the API refused the request with
+    HTTP 402 / code SUBSCRIPTION_REQUIRED. No-op for any other status code.
+    """
+    if response.status_code != 402:
+        return
+
+    message = None
+    try:
+        error_data = response.json()
+        if isinstance(error_data, dict) and error_data.get("error"):
+            message = error_data["error"]
+    except (ValueError, KeyError):
+        pass
+
+    raise SubscriptionRequiredError(message, response=response)
+
 
 class AudialProxy:
     """Proxy client for the Audial API."""
-    
+
     def __init__(self, api_key: Optional[str] = None):
         """
         Initialize the API client.
-        
+
         Args:
             api_key (str, optional): The API key to use. If not provided, it will be loaded from the configuration.
         """
         self.api_key = api_key
-        self.auth_endpoint = AUTH_SERVER_URL
-        self.base_url = API_BASE_URL
-        
+        # Resolved fresh on every instantiation so AUDIAL_API_BASE_URL can be
+        # set at any point before creating a proxy (e.g. in tests) and take
+        # effect without needing to reload the constants module.
+        self.base_url = get_api_base_url()
+        self.auth_endpoint = f"{self.base_url}/proxy"
+
         # Create a session with retry logic
         self.session = requests.Session()
         retries = Retry(
@@ -120,6 +140,7 @@ class AudialProxy:
             raise AudialAPIError(f"Request error: {str(e)}")
         
         # Check for errors
+        _check_subscription_required(response)
         if response.status_code == 401:
             raise AudialAuthError("Invalid API key")
         
@@ -174,6 +195,7 @@ class AudialProxy:
             )
             
             # Check for errors
+            _check_subscription_required(response)
             if response.status_code == 401 or response.status_code == 403:
                 raise AudialAuthError(f"Authentication failed: {response.status_code}")
             
@@ -242,6 +264,7 @@ class AudialProxy:
                     print("Could not print response body")
                 
                 # Check for errors
+                _check_subscription_required(response)
                 if response.status_code == 401 or response.status_code == 403:
                     raise AudialAuthError(f"Authentication failed: {response.status_code}")
                 
@@ -260,7 +283,84 @@ class AudialProxy:
                 
             except requests.exceptions.RequestException as e:
                 raise AudialAPIError(f"File upload failed: {str(e)}")
-    
+
+    def upload_execution_file(self, file_path: str, exe_id: str, filetype: str) -> Dict[str, Any]:
+        """
+        Upload a file scoped to a specific execution and filetype via
+        PUT /files/{userId}/execution/{exeId}/{filetype}/{filename}.
+
+        Used by async functions (sound2vital, text2vox) that need their
+        input file placed under a specific execution id before the run
+        endpoint is called, as opposed to the general-purpose
+        /files/{userId}/upload endpoint used by upload_file().
+
+        The filename is sanitized to an [A-Za-z0-9_-] stem plus a lowercase
+        extension before upload, since the server keys the stored file on it.
+
+        Args:
+            file_path (str): The path to the local file to upload.
+            exe_id (str): The execution ID to scope the upload to.
+            filetype (str): The storage filetype/category, e.g. "reference",
+                "midi", "melody", "word_ts".
+
+        Returns:
+            Dict[str, Any]: {"filename": sanitized filename, "url": uploaded
+                file URL, "type": MIME type}.
+        """
+        # Get user ID
+        user_id = get_user_id()
+
+        # Check if file exists
+        if not os.path.isfile(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        # Sanitize filename -- the server keys the stored file on it
+        filename = sanitize_filename(os.path.basename(file_path))
+        mime_type = get_mime_type(file_path)
+
+        url = f"{self.base_url}/files/{user_id}/execution/{exe_id}/{filetype}/{filename}"
+        headers = get_auth_headers(self.api_key)
+
+        # Remove content-type header as it will be set by requests for multipart
+        if 'Content-Type' in headers:
+            del headers['Content-Type']
+
+        with open(file_path, 'rb') as f:
+            files = {'file': (filename, f, mime_type)}
+            try:
+                response = self.session.put(
+                    url,
+                    headers=headers,
+                    files=files,
+                    timeout=REQUEST_TIMEOUT
+                )
+
+                # Check for errors
+                _check_subscription_required(response)
+                if response.status_code == 401 or response.status_code == 403:
+                    raise AudialAuthError(f"Authentication failed: {response.status_code}")
+
+                if response.status_code >= 400:
+                    error_message = f"API error: {response.status_code}"
+                    try:
+                        error_data = response.json()
+                        if isinstance(error_data, dict) and "error" in error_data:
+                            error_message = f"API error: {error_data['error']}"
+                    except (ValueError, KeyError):
+                        pass
+
+                    raise AudialAPIError(error_message)
+
+                data = response.json()
+                return {
+                    "filename": filename,
+                    "url": data.get("url"),
+                    "type": mime_type,
+                }
+
+            except requests.exceptions.RequestException as e:
+                raise AudialAPIError(f"File upload failed: {str(e)}")
+
     def run_primary_analysis(self, exe_id: str, file_url: str) -> Dict[str, Any]:
         """
         Run primary analysis on a file.
@@ -293,6 +393,7 @@ class AudialProxy:
             )
             
             # Check for errors
+            _check_subscription_required(response)
             if response.status_code == 401 or response.status_code == 403:
                 raise AudialAuthError(f"Authentication failed: {response.status_code}")
             
@@ -418,6 +519,7 @@ class AudialProxy:
             )
             
             # Check for errors
+            _check_subscription_required(response)
             if response.status_code == 401 or response.status_code == 403:
                 raise AudialAuthError(f"Authentication failed: {response.status_code}")
             
@@ -516,6 +618,7 @@ class AudialProxy:
             )
             
             # Check for errors
+            _check_subscription_required(response)
             if response.status_code == 401 or response.status_code == 403:
                 raise AudialAuthError(f"Authentication failed: {response.status_code}")
             
@@ -633,6 +736,7 @@ class AudialProxy:
             )
                         
             # Check for immediate errors
+            _check_subscription_required(response)
             if response.status_code == 401 or response.status_code == 403:
                 raise AudialAuthError(f"Authentication failed: {response.status_code}")
             
@@ -719,6 +823,7 @@ class AudialProxy:
                 )
 
                 # Check for errors
+                _check_subscription_required(response)
                 if response.status_code in (401, 403):
                     raise AudialAuthError(f"Authentication failed: {response.status_code}")
 
@@ -872,6 +977,7 @@ class AudialProxy:
                     timeout=REQUEST_TIMEOUT * 2,
                 )
 
+                _check_subscription_required(response)
                 if response.status_code in (401, 403):
                     raise AudialAuthError(f"Authentication failed: {response.status_code}")
 
@@ -909,6 +1015,191 @@ class AudialProxy:
                 raise AudialAPIError(f"Music generator request error: {str(e)}")
         raise AudialAPIError(f"Music generator failed after retries: {last_error}")
 
+    def run_sound2vital(self, original_file: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Run sound2vital: analyze a short audio clip and synthesize a Vital
+        preset that reproduces its timbre.
+
+        The API creates its own execution for this call (like
+        run_music_generator) -- the returned dict's "exeId" is the one to
+        poll, not any exeId used for the earlier upload.
+
+        Args:
+            original_file (Dict[str, Any]): {"filename", "url"} for the
+                already-uploaded reference audio (see upload_execution_file).
+
+        Returns:
+            Dict[str, Any]: The execution object (poll get_execution with
+                its "exeId" until state is "completed" or "failed").
+        """
+        user_id = get_user_id()
+
+        request_data = {
+            "userId": user_id,
+            "original": {
+                "filename": original_file.get("filename"),
+                "url": original_file.get("url"),
+            },
+        }
+
+        url = f"{self.base_url}/functions/run/sound2vital"
+        headers = get_auth_headers(self.api_key)
+
+        try:
+            response = self.session.post(
+                url,
+                headers=headers,
+                json=request_data,
+                timeout=REQUEST_TIMEOUT,
+            )
+
+            _check_subscription_required(response)
+            if response.status_code in (401, 403):
+                raise AudialAuthError(f"Authentication failed: {response.status_code}")
+
+            if response.status_code >= 400:
+                error_message = f"API error: {response.status_code}"
+                try:
+                    error_data = response.json()
+                    if isinstance(error_data, dict) and "error" in error_data:
+                        error_message = f"API error: {error_data['error']}"
+                except (ValueError, KeyError):
+                    pass
+                raise AudialAPIError(error_message)
+
+            return response.json()
+
+        except requests.exceptions.Timeout:
+            return {"state": "processing", "info": "sound2vital initiated but response timed out"}
+        except requests.exceptions.RequestException as e:
+            raise AudialAPIError(f"sound2vital request error: {str(e)}")
+
+    def run_text2vox(
+        self,
+        original_file: Dict[str, Any],
+        lyrics: str,
+        lyrics_mode: Optional[str] = None,
+        reference_text: Optional[str] = None,
+        midi_file: Optional[Dict[str, Any]] = None,
+        melody_audio_file: Optional[Dict[str, Any]] = None,
+        word_timestamps_file: Optional[Dict[str, Any]] = None,
+        cfg_strength: Optional[float] = None,
+        nfe_steps: Optional[int] = None,
+        pitch_shift: Optional[float] = None,
+        strict_pitch: Optional[bool] = None,
+        bend_smoothing_ms: Optional[float] = None,
+        no_pitch_bends: Optional[bool] = None,
+        leading_silence_s: Optional[float] = None,
+        seed: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Run text2vox: synthesize a sung vocal in the timbre of a short
+        reference voice clip, following a melody (MIDI or audio) and lyrics.
+
+        The API creates its own execution for this call -- the returned
+        dict's "exeId" is the one to poll.
+
+        Args:
+            original_file (Dict[str, Any]): {"filename", "url"} for the
+                already-uploaded reference voice clip.
+            lyrics (str): The lyrics to sing. Required.
+            lyrics_mode (str, optional): "auto" (default), "per_note", or "1to1".
+            reference_text (str, optional): What is said in the reference clip.
+            midi_file (Dict[str, Any], optional): {"filename", "url"} for the
+                uploaded MIDI driving the melody. Exactly one of midi_file /
+                melody_audio_file is required by the worker.
+            melody_audio_file (Dict[str, Any], optional): {"filename", "url"}
+                for uploaded override melody audio.
+            word_timestamps_file (Dict[str, Any], optional): {"filename",
+                "url"} for uploaded Whisper word-timestamps JSON.
+            cfg_strength (float, optional)
+            nfe_steps (int, optional)
+            pitch_shift (float, optional)
+            strict_pitch (bool, optional)
+            bend_smoothing_ms (float, optional)
+            no_pitch_bends (bool, optional)
+            leading_silence_s (float, optional)
+            seed (int, optional)
+
+        Returns:
+            Dict[str, Any]: The execution object (poll get_execution with
+                its "exeId" until state is "completed" or "failed").
+        """
+        user_id = get_user_id()
+
+        text2vox_input: Dict[str, Any] = {"lyrics": lyrics}
+        if lyrics_mode is not None:
+            text2vox_input["lyricsMode"] = lyrics_mode
+        if reference_text is not None:
+            text2vox_input["referenceText"] = reference_text
+        if midi_file is not None:
+            text2vox_input["midi"] = midi_file
+        if melody_audio_file is not None:
+            text2vox_input["melodyAudio"] = melody_audio_file
+        if word_timestamps_file is not None:
+            text2vox_input["wordTimestamps"] = word_timestamps_file
+
+        options = {}
+        if cfg_strength is not None:
+            options["cfgStrength"] = cfg_strength
+        if nfe_steps is not None:
+            options["nfeSteps"] = nfe_steps
+        if pitch_shift is not None:
+            options["pitchShift"] = pitch_shift
+        if strict_pitch is not None:
+            options["strictPitch"] = strict_pitch
+        if bend_smoothing_ms is not None:
+            options["bendSmoothingMs"] = bend_smoothing_ms
+        if no_pitch_bends is not None:
+            options["noPitchBends"] = no_pitch_bends
+        if leading_silence_s is not None:
+            options["leadingSilenceS"] = leading_silence_s
+        if seed is not None:
+            options["seed"] = seed
+        if options:
+            text2vox_input["options"] = options
+
+        request_data = {
+            "userId": user_id,
+            "original": {
+                "filename": original_file.get("filename"),
+                "url": original_file.get("url"),
+            },
+            "text2vox": text2vox_input,
+        }
+
+        url = f"{self.base_url}/functions/run/text2vox"
+        headers = get_auth_headers(self.api_key)
+
+        try:
+            response = self.session.post(
+                url,
+                headers=headers,
+                json=request_data,
+                timeout=REQUEST_TIMEOUT,
+            )
+
+            _check_subscription_required(response)
+            if response.status_code in (401, 403):
+                raise AudialAuthError(f"Authentication failed: {response.status_code}")
+
+            if response.status_code >= 400:
+                error_message = f"API error: {response.status_code}"
+                try:
+                    error_data = response.json()
+                    if isinstance(error_data, dict) and "error" in error_data:
+                        error_message = f"API error: {error_data['error']}"
+                except (ValueError, KeyError):
+                    pass
+                raise AudialAPIError(error_message)
+
+            return response.json()
+
+        except requests.exceptions.Timeout:
+            return {"state": "processing", "info": "text2vox initiated but response timed out"}
+        except requests.exceptions.RequestException as e:
+            raise AudialAPIError(f"text2vox request error: {str(e)}")
+
     def get_execution(self, exe_id: str) -> Dict[str, Any]:
         """
         Get an execution by ID.
@@ -934,6 +1225,7 @@ class AudialProxy:
             
             
             # Check for errors
+            _check_subscription_required(response)
             if response.status_code == 401 or response.status_code == 403:
                 raise AudialAuthError(f"Authentication failed: {response.status_code}")
             
@@ -1026,6 +1318,7 @@ class AudialProxy:
                 print("Could not print response body")
             
             # Check for errors
+            _check_subscription_required(response)
             if response.status_code == 401 or response.status_code == 403:
                 raise AudialAuthError(f"Authentication failed: {response.status_code}")
             

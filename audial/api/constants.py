@@ -2,10 +2,34 @@
 Constants for the Audial API.
 """
 
+import os
+
+# Production API host. Override with the AUDIAL_API_BASE_URL environment
+# variable to point the SDK at a different deployment (staging, a local mock
+# server, a self-hosted instance) without code changes.
+DEFAULT_API_BASE_URL = "https://audial-api-prod-czos6.ondigitalocean.app/api"
+
+
+def get_api_base_url() -> str:
+    """
+    Return the Audial API base URL, honoring the AUDIAL_API_BASE_URL
+    environment variable override if it is set.
+
+    This is a function (rather than a plain module constant) so callers can
+    set the environment variable at any point before instantiating
+    AudialProxy and have it take effect -- useful for tests and for
+    switching deployments within a single process.
+    """
+    return os.environ.get("AUDIAL_API_BASE_URL", DEFAULT_API_BASE_URL).rstrip("/")
+
+
 # Base API URL - using the auth server as proxy
 # This endpoint will be responsible for routing to the actual API endpoints
-API_BASE_URL = "https://audial-api-prod-czos6.ondigitalocean.app/api"
-AUTH_SERVER_URL = "https://audial-api-prod-czos6.ondigitalocean.app/api/proxy"
+# Resolved once at import time for backward-compatible module-level access;
+# code that must honor a post-import env var change should call
+# get_api_base_url() directly (AudialProxy does this in __init__).
+API_BASE_URL = get_api_base_url()
+AUTH_SERVER_URL = f"{API_BASE_URL}/proxy"
 
 # Function names as defined in the API
 FUNCTION_STEM_SPLITTER = "stem-splitter"
@@ -84,3 +108,25 @@ DEFAULT_AUDIO_COVER_STRENGTH = 1.0
 
 # Valid audio output formats
 AUDIO_FORMATS = ["mp3", "flac", "wav", "opus", "aac"]
+
+# sound2vital
+FUNCTION_SOUND2VITAL = "sound2vital"
+EXECUTION_TYPE_PRESET = "preset"
+# Input audio must be at most this many seconds long.
+SOUND2VITAL_MAX_INPUT_DURATION = 20
+# Typical job runtime is 60-250s; leave headroom for polling.
+SOUND2VITAL_DEFAULT_MAX_WAIT = 360
+SOUND2VITAL_DEFAULT_POLL_INTERVAL = 5
+
+# text2vox
+FUNCTION_TEXT2VOX = "text2vox"
+EXECUTION_TYPE_TEXT2VOX = "generated"
+TEXT2VOX_LYRICS_MODES = ["auto", "per_note", "1to1"]
+TEXT2VOX_DEFAULT_MAX_WAIT = 360
+TEXT2VOX_DEFAULT_POLL_INTERVAL = 5
+
+# Execution-scoped upload filetypes (PUT /files/{userId}/execution/{exeId}/{filetype}/{filename})
+FILETYPE_REFERENCE = "reference"
+FILETYPE_MIDI = "midi"
+FILETYPE_MELODY = "melody"
+FILETYPE_WORD_TS = "word_ts"
