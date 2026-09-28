@@ -52,3 +52,6 @@ dist/
 build/
 docs/
 test_audio/
+
+# Agent working notes / reports, not part of the package
+.superpowers/
