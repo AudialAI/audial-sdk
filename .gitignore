@@ -50,3 +50,5 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+docs/
+test_audio/

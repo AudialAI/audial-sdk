@@ -14,7 +14,8 @@ from audial.functions.midi import generate_midi
 from audial.functions.samples import generate_samples
 from audial.functions.segment import segment
 from audial.functions.stem_split import stem_split
-from audial.utils.config import get_api_key, get_results_folder, set_api_key, set_results_folder, get_user_id, set_user_id  # Add the user_id functions
+from audial.functions.generate_music import generate_music
+from audial.utils.config import get_api_key, get_results_folder, set_api_key, set_results_folder, get_user_id, set_user_id
 from audial.api.exceptions import AudialError
 
 
@@ -129,6 +130,50 @@ def setup_stem_split_parser(subparsers):
     parser.add_argument('--results-folder', help='Folder to save results (uses default if not specified)')
     parser.add_argument('--api-key', help='API key to use (uses default if not specified)')
     parser.set_defaults(func=stem_split_command)
+
+
+def setup_generate_music_parser(subparsers):
+    """Setup the parser for the generate command."""
+    parser = subparsers.add_parser(
+        'generate',
+        help='Generate music from a text prompt using the ACE-Step 1.5 model'
+    )
+    parser.add_argument('prompt', help='Text describing the desired music style, mood, genre')
+    parser.add_argument('--task-type', '-t', default='text2music',
+                       choices=['text2music', 'cover', 'remix', 'extract',
+                                'lego', 'complete', 'understand'],
+                       help='Generation mode (default: text2music)')
+    parser.add_argument('--source', '-s', dest='source_file', default=None,
+                       help='Source audio file path (required for remix/extract/lego/complete/understand)')
+    parser.add_argument('--reference', '-r', dest='reference_file', default=None,
+                       help='Reference audio file path (required for cover mode)')
+    parser.add_argument('--lyrics', '-l', default=None, help='Song lyrics')
+    parser.add_argument('--bpm', type=int, default=None, help='Target BPM')
+    parser.add_argument('--key', dest='key_scale', default=None,
+                       help="Musical key (e.g. 'C major')")
+    parser.add_argument('--duration', dest='audio_duration', type=float, default=None,
+                       help='Duration in seconds (10-600)')
+    parser.add_argument('--batch-size', '-b', type=int, default=1,
+                       help='Number of variations to generate (1-8, default: 1)')
+    parser.add_argument('--format', '-f', dest='audio_format', default='mp3',
+                       choices=['mp3', 'flac', 'wav', 'opus', 'aac'],
+                       help='Output audio format (default: mp3)')
+    parser.add_argument('--instrumental', action='store_true',
+                       help='Generate without vocals')
+    parser.add_argument('--seed', type=int, default=None, help='Random seed for reproducibility')
+    parser.add_argument('--steps', dest='inference_steps', type=int, default=50,
+                       help='Inference steps (8=fast/turbo, 50=quality, default: 50)')
+    parser.add_argument('--guidance', dest='guidance_scale', type=float, default=7.0,
+                       help='Guidance scale (1.0-15.0, default: 7.0)')
+    parser.add_argument('--cover-strength', dest='audio_cover_strength', type=float, default=None,
+                       help='Cover/remix fidelity to original (0.0-1.0)')
+    parser.add_argument('--track-name', default=None,
+                       help='Track to extract/replace (extract/lego modes)')
+    parser.add_argument('--negative-prompt', default=None,
+                       help='Text describing what to avoid')
+    parser.add_argument('--results-folder', help='Folder to save results (uses default if not specified)')
+    parser.add_argument('--api-key', help='API key to use (uses default if not specified)')
+    parser.set_defaults(func=generate_music_command)
 
 
 def setup_config_parser(subparsers):
@@ -303,6 +348,48 @@ def stem_split_command(args) -> Dict[str, Any]:
         sys.exit(1)
 
 
+def generate_music_command(args) -> Dict[str, Any]:
+    """Handle the generate command."""
+    try:
+        result = generate_music(
+            prompt=args.prompt,
+            task_type=args.task_type,
+            source_file=args.source_file,
+            reference_file=args.reference_file,
+            lyrics=args.lyrics,
+            bpm=args.bpm,
+            key_scale=args.key_scale,
+            audio_duration=args.audio_duration,
+            batch_size=args.batch_size,
+            audio_format=args.audio_format,
+            instrumental=args.instrumental,
+            seed=args.seed,
+            inference_steps=args.inference_steps,
+            guidance_scale=args.guidance_scale,
+            audio_cover_strength=args.audio_cover_strength,
+            track_name=args.track_name,
+            negative_prompt=args.negative_prompt,
+            results_folder=args.results_folder,
+            api_key=args.api_key,
+        )
+
+        if args.task_type == "understand":
+            print("\nCaption Result:")
+            for k, v in result.get("caption_result", {}).items():
+                print(f"  {k}: {v}")
+        else:
+            files = result.get("files", {}).get("files", {})
+            print(f"\nGenerated {len(files)} file(s):")
+            for name, path in files.items():
+                print(f"  {path}")
+
+        return result
+
+    except AudialError as e:
+        print(f"Error: {str(e)}", file=sys.stderr)
+        sys.exit(1)
+
+
 def config_command(args) -> None:
     """Handle the config command."""
     try:
@@ -369,6 +456,7 @@ def cli():
     setup_master_parser(subparsers)
     setup_generate_midi_parser(subparsers)
     setup_generate_samples_parser(subparsers)
+    setup_generate_music_parser(subparsers)
     setup_segment_parser(subparsers)
     setup_stem_split_parser(subparsers)
     setup_config_parser(subparsers)

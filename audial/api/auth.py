@@ -9,62 +9,28 @@ import json
 
 from audial.api.exceptions import AudialAuthError
 from audial.utils.config import get_user_id
+from audial.utils.config import get_api_key as _config_get_api_key
 
-def load_dotenv():
-    """
-    Load environment variables from .env file.
-    """
-    try:
-        # Check if .env file exists
-        if os.path.exists('.env'):
-            with open('.env', 'r') as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith('#'):
-                        key, value = line.split('=', 1)
-                        # Remove quotes if present
-                        value = value.strip().strip('"\'')
-                        os.environ[key.strip()] = value
-    except Exception as e:
-        print(f"Warning: Could not load .env file: {str(e)}")
 
 def get_api_key():
     """
     Get the API key from environment or config file.
-    
+
     Returns:
         str: The API key.
-        
+
     Raises:
         AudialAuthError: If no API key is available.
     """
-    # Try to load from .env file first
-    load_dotenv()
-    
-    # Check environment variable
-    api_key = os.environ.get("AUDIAL_API_KEY")
-    
-    if not api_key:
-        # Check config file
-        config_dir = os.path.expanduser("~/.audial")
-        config_file = os.path.join(config_dir, "config.json")
-        
-        if os.path.exists(config_file):
-            try:
-                with open(config_file, 'r') as f:
-                    config = json.load(f)
-                    api_key = config.get("api_key")
-            except Exception as e:
-                pass
-    
-    # If still no API key, raise an error
+    api_key = _config_get_api_key()
+
     if not api_key:
         raise AudialAuthError(
             "No API key available. Please set your API key using "
             "audial.config.set_api_key() or by setting the AUDIAL_API_KEY "
             "environment variable."
         )
-    
+
     return api_key
 
 def get_auth_headers(api_key: str = None) -> Dict[str, str]:

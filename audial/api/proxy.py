@@ -47,7 +47,6 @@ class AudialProxy:
         retries = Retry(
             total=0,
             backoff_factor=0.5,
-            status_forcelist=[502, 503, 504],
             allowed_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         )
         self.session.mount("https://", HTTPAdapter(max_retries=retries))
@@ -83,6 +82,7 @@ class AudialProxy:
             "mastering": f"/functions/run/mastering",
             "sample_pack": f"/functions/run/sample-pack",
             "generate_midi": f"/functions/run/generate-midi",
+            "music_generator": f"/functions/run/music-generator",
             "get_execution": f"/db/{params.get('userId', user_id)}/execution/{params.get('exeId', '')}",
             "get_execution_files_by_type": f"/files/{params.get('userId', user_id)}/execution/{params.get('exeId', '')}/{params.get('filetype', '')}"
         }
@@ -706,35 +706,209 @@ class AudialProxy:
         
         url = f"{self.base_url}/functions/run/generate-midi"
         headers = get_auth_headers(self.api_key)
-                
-        try:
-            response = self.session.post(
-                url,
-                headers=headers,
-                json=midi_request,
-                timeout=REQUEST_TIMEOUT * 2  # Longer timeout for processing
-            )
-            
-            # Check for errors
-            if response.status_code == 401 or response.status_code == 403:
-                raise AudialAuthError(f"Authentication failed: {response.status_code}")
-            
-            if response.status_code >= 400:
-                error_message = f"API error: {response.status_code}"
-                try:
-                    error_data = response.json()
-                    if isinstance(error_data, dict) and "error" in error_data:
-                        error_message = f"API error: {error_data['error']}"
-                except (ValueError, KeyError):
-                    pass
-                
-                raise AudialAPIError(error_message)
-            
-            return response.json()
-            
-        except requests.exceptions.RequestException as e:
-            raise AudialAPIError(f"Request error: {str(e)}")
-    
+
+        last_error = None
+        max_attempts = 5
+        for attempt in range(max_attempts):
+            try:
+                response = self.session.post(
+                    url,
+                    headers=headers,
+                    json=midi_request,
+                    timeout=REQUEST_TIMEOUT * 2  # Longer timeout for processing
+                )
+
+                # Check for errors
+                if response.status_code in (401, 403):
+                    raise AudialAuthError(f"Authentication failed: {response.status_code}")
+
+                # Retry on 429/500/502/503/504 errors (rate limits and gateway errors)
+                if response.status_code in (429, 500, 502, 503, 504):
+                    last_error = f"API error: {response.status_code}"
+                    try:
+                        error_data = response.json()
+                        if isinstance(error_data, dict) and "error" in error_data:
+                            last_error = f"API error: {error_data['error']}"
+                        elif isinstance(error_data, str):
+                            last_error = f"API error: {error_data}"
+                    except (ValueError, KeyError):
+                        last_error = f"API error: {response.status_code} - {response.text[:200]}"
+                    if attempt < max_attempts - 1:
+                        wait = 10 * (attempt + 1)
+                        print(f"  MIDI generation error ({response.status_code}), retrying in {wait}s...")
+                        time.sleep(wait)
+                        continue
+                    raise AudialAPIError(last_error)
+
+                if response.status_code >= 400:
+                    error_message = f"API error: {response.status_code}"
+                    try:
+                        error_data = response.json()
+                        if isinstance(error_data, dict) and "error" in error_data:
+                            error_message = f"API error: {error_data['error']}"
+                    except (ValueError, KeyError):
+                        pass
+
+                    raise AudialAPIError(error_message)
+
+                return response.json()
+
+            except requests.exceptions.RequestException as e:
+                raise AudialAPIError(f"Request error: {str(e)}")
+        raise AudialAPIError(f"MIDI generation failed after retries: {last_error}")
+
+    def run_music_generator(
+        self,
+        exe_id: str,
+        task_type: str,
+        prompt: str,
+        lyrics: str = None,
+        bpm: int = None,
+        key_scale: str = None,
+        time_signature: str = None,
+        audio_duration: float = None,
+        vocal_language: str = "en",
+        reference_file: dict = None,
+        source_file: dict = None,
+        audio_cover_strength: float = None,
+        repainting_start: float = None,
+        repainting_end: float = None,
+        batch_size: int = 1,
+        seed: int = None,
+        inference_steps: int = 50,
+        guidance_scale: float = 7.0,
+        audio_format: str = "mp3",
+        track_name: str = None,
+        track_classes: list = None,
+        instrumental: bool = False,
+        negative_prompt: str = None,
+    ) -> dict:
+        """
+        Run music generation.
+
+        Args:
+            exe_id: The execution ID.
+            task_type: One of text2music, cover, remix, extract, lego, complete, understand.
+            prompt: Text describing the desired music.
+            lyrics: Song lyrics (for vocal generation).
+            bpm: Target BPM.
+            key_scale: Musical key, e.g. "C major".
+            time_signature: e.g. "4/4".
+            audio_duration: Duration in seconds (10-600).
+            vocal_language: Language code for vocals (default "en").
+            reference_file: Dict with filename/url for cover mode.
+            source_file: Dict with filename/url for remix/extract/lego/complete/understand.
+            audio_cover_strength: 0.0-1.0, how faithful to original (cover/remix).
+            repainting_start: Start time in seconds for remix mode.
+            repainting_end: End time in seconds for remix mode (-1 = end of song).
+            batch_size: Number of variations to generate (1-8).
+            seed: Random seed for reproducibility.
+            inference_steps: Diffusion steps (8=turbo, 50=standard).
+            guidance_scale: Classifier-free guidance scale (1.0-15.0).
+            audio_format: Output format (mp3, flac, wav, opus, aac).
+            track_name: Track to extract/replace (for extract/lego modes).
+            track_classes: Instrument classes to generate (for complete mode).
+            instrumental: If True, generate without vocals.
+            negative_prompt: Text describing what to avoid.
+
+        Returns:
+            dict: The API response.
+        """
+        user_id = get_user_id()
+
+        request_data = {
+            "userId": user_id,
+            "taskType": task_type,
+            "prompt": prompt,
+            "batchSize": batch_size,
+            "inferenceSteps": inference_steps,
+            "guidanceScale": guidance_scale,
+            "audioFormat": audio_format,
+            "instrumental": instrumental,
+            "vocalLanguage": vocal_language,
+        }
+
+        # Optional fields — only include if provided
+        if lyrics is not None:
+            request_data["lyrics"] = lyrics
+        if bpm is not None:
+            request_data["bpm"] = bpm
+        if key_scale is not None:
+            request_data["keyScale"] = key_scale
+        if time_signature is not None:
+            request_data["timeSignature"] = time_signature
+        if audio_duration is not None:
+            request_data["audioDuration"] = audio_duration
+        if reference_file is not None:
+            request_data["referenceFile"] = reference_file
+        if source_file is not None:
+            request_data["sourceFile"] = source_file
+        if audio_cover_strength is not None:
+            request_data["audioCoverStrength"] = audio_cover_strength
+        if repainting_start is not None:
+            request_data["repaintingStart"] = repainting_start
+        if repainting_end is not None:
+            request_data["repaintingEnd"] = repainting_end
+        if seed is not None:
+            request_data["seed"] = seed
+        if track_name is not None:
+            request_data["trackName"] = track_name
+        if track_classes is not None:
+            request_data["trackClasses"] = track_classes
+        if negative_prompt is not None:
+            request_data["negativePrompt"] = negative_prompt
+
+        url = f"{self.base_url}/functions/run/music-generator"
+        headers = get_auth_headers(self.api_key)
+
+        last_error = None
+        max_attempts = 5
+        for attempt in range(max_attempts):
+            try:
+                response = self.session.post(
+                    url,
+                    headers=headers,
+                    json=request_data,
+                    timeout=REQUEST_TIMEOUT * 2,
+                )
+
+                if response.status_code in (401, 403):
+                    raise AudialAuthError(f"Authentication failed: {response.status_code}")
+
+                # Retry on 502/503/504 gateway errors
+                if response.status_code in (502, 503, 504):
+                    last_error = f"API error: {response.status_code}"
+                    if attempt < max_attempts - 1:
+                        wait = 5 * (attempt + 1)
+                        print(f"  Gateway error ({response.status_code}), retrying in {wait}s...")
+                        time.sleep(wait)
+                        continue
+                    raise AudialAPIError(last_error)
+
+                if response.status_code >= 400:
+                    error_message = f"API error: {response.status_code}"
+                    try:
+                        error_data = response.json()
+                        if isinstance(error_data, dict) and "error" in error_data:
+                            error_message = f"API error: {error_data['error']}"
+                    except (ValueError, KeyError):
+                        pass
+                    raise AudialAPIError(error_message)
+
+                return response.json()
+
+            except requests.exceptions.Timeout:
+                return {
+                    "exeId": exe_id,
+                    "state": "processing",
+                    "info": "Music generation initiated but response timed out",
+                }
+            except requests.exceptions.RequestException as e:
+                if "timeout" in str(e).lower():
+                    return {"exeId": exe_id, "state": "processing"}
+                raise AudialAPIError(f"Music generator request error: {str(e)}")
+        raise AudialAPIError(f"Music generator failed after retries: {last_error}")
+
     def get_execution(self, exe_id: str) -> Dict[str, Any]:
         """
         Get an execution by ID.

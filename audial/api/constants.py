@@ -57,3 +57,30 @@ REQUEST_TIMEOUT = 60
 # Default values for segmentation
 DEFAULT_SEGMENTATION_COMPONENTS = ["intro", "verse", "chorus", "outro"]
 DEFAULT_SEGMENTATION_FEATURES = ["energy", "tempo", "loudness"]
+
+# Music Generator
+FUNCTION_MUSIC_GENERATOR = "music-generator"
+EXECUTION_TYPE_MUSIC_GENERATOR = "generated"
+
+# Music Generator task types
+MUSIC_GENERATOR_TASK_TYPES = [
+    "text2music",
+    "cover",
+    "remix",
+    "extract",
+    "lego",
+    "complete",
+    "understand",
+]
+
+# Music Generator defaults
+DEFAULT_INFERENCE_STEPS = 50
+DEFAULT_GUIDANCE_SCALE = 7.0
+DEFAULT_BATCH_SIZE = 1
+DEFAULT_AUDIO_FORMAT = "mp3"
+DEFAULT_AUDIO_DURATION = 60
+DEFAULT_VOCAL_LANGUAGE = "en"
+DEFAULT_AUDIO_COVER_STRENGTH = 1.0
+
+# Valid audio output formats
+AUDIO_FORMATS = ["mp3", "flac", "wav", "opus", "aac"]
