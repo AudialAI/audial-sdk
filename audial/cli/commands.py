@@ -15,6 +15,8 @@ from audial.functions.samples import generate_samples
 from audial.functions.segment import segment
 from audial.functions.stem_split import stem_split
 from audial.functions.generate_music import generate_music
+from audial.functions.sound2vital import sound2vital
+from audial.functions.text2vox import text2vox
 from audial.utils.config import get_api_key, get_results_folder, set_api_key, set_results_folder, get_user_id, set_user_id
 from audial.api.exceptions import AudialError
 
@@ -174,6 +176,48 @@ def setup_generate_music_parser(subparsers):
     parser.add_argument('--results-folder', help='Folder to save results (uses default if not specified)')
     parser.add_argument('--api-key', help='API key to use (uses default if not specified)')
     parser.set_defaults(func=generate_music_command)
+
+
+def setup_sound2vital_parser(subparsers):
+    """Setup the parser for the sound2vital command."""
+    parser = subparsers.add_parser(
+        'sound2vital',
+        help='Synthesize a Vital preset that reproduces the timbre of a short (<=20s) audio clip'
+    )
+    parser.add_argument('file_path', help='Path to the input audio file (20 seconds or shorter)')
+    parser.add_argument('--results-folder', help='Folder to save results (uses default if not specified)')
+    parser.add_argument('--api-key', help='API key to use (uses default if not specified)')
+    parser.set_defaults(func=sound2vital_command)
+
+
+def setup_text2vox_parser(subparsers):
+    """Setup the parser for the text2vox command."""
+    parser = subparsers.add_parser(
+        'text2vox',
+        help='Synthesize a sung vocal in the timbre of a reference voice clip, following a melody and lyrics'
+    )
+    parser.add_argument('reference_file', help='Path to a short (5-10s) reference voice clip')
+    parser.add_argument('lyrics', help='Lyrics to sing')
+    parser.add_argument('--midi', dest='midi_file', default=None,
+                       help='Path to a MIDI file driving the melody (required unless --melody-audio is given)')
+    parser.add_argument('--melody-audio', dest='melody_audio_file', default=None,
+                       help='Path to override melody audio (required unless --midi is given)')
+    parser.add_argument('--word-timestamps', dest='word_timestamps_file', default=None,
+                       help='Path to a Whisper word-timestamps JSON, used by auto-align')
+    parser.add_argument('--lyrics-mode', default='auto', choices=['auto', 'per_note', '1to1'],
+                       help='Lyrics alignment mode (default: auto)')
+    parser.add_argument('--reference-text', default=None, help='What is said in the reference clip')
+    parser.add_argument('--cfg-strength', type=float, default=None, help='Worker synthesis option')
+    parser.add_argument('--nfe-steps', type=int, default=None, help='Worker synthesis option')
+    parser.add_argument('--pitch-shift', type=float, default=None, help='Worker synthesis option')
+    parser.add_argument('--strict-pitch', action='store_true', default=None, help='Worker synthesis option')
+    parser.add_argument('--bend-smoothing-ms', type=float, default=None, help='Worker synthesis option')
+    parser.add_argument('--no-pitch-bends', action='store_true', default=None, help='Worker synthesis option')
+    parser.add_argument('--leading-silence-s', type=float, default=None, help='Worker synthesis option')
+    parser.add_argument('--seed', type=int, default=None, help='Random seed for reproducibility')
+    parser.add_argument('--results-folder', help='Folder to save results (uses default if not specified)')
+    parser.add_argument('--api-key', help='API key to use (uses default if not specified)')
+    parser.set_defaults(func=text2vox_command)
 
 
 def setup_config_parser(subparsers):
@@ -390,6 +434,64 @@ def generate_music_command(args) -> Dict[str, Any]:
         sys.exit(1)
 
 
+def sound2vital_command(args) -> Dict[str, Any]:
+    """Handle the sound2vital command."""
+    try:
+        result = sound2vital(
+            file_path=args.file_path,
+            results_folder=args.results_folder,
+            api_key=args.api_key,
+        )
+
+        print("\nsound2vital Results:")
+        if "preset" in result:
+            print(f"Preset: {result['preset']}")
+        if "scores" in result and isinstance(result["scores"], dict):
+            print(f"Scores: {result['scores']}")
+        print(f"Files downloaded: {len(result['files']['files'])}")
+        print(f"\nResults saved to: {result['files']['folder']}")
+
+        return result
+
+    except AudialError as e:
+        print(f"Error: {str(e)}", file=sys.stderr)
+        sys.exit(1)
+
+
+def text2vox_command(args) -> Dict[str, Any]:
+    """Handle the text2vox command."""
+    try:
+        result = text2vox(
+            reference_file=args.reference_file,
+            lyrics=args.lyrics,
+            midi_file=args.midi_file,
+            melody_audio_file=args.melody_audio_file,
+            word_timestamps_file=args.word_timestamps_file,
+            lyrics_mode=args.lyrics_mode,
+            reference_text=args.reference_text,
+            cfg_strength=args.cfg_strength,
+            nfe_steps=args.nfe_steps,
+            pitch_shift=args.pitch_shift,
+            strict_pitch=args.strict_pitch,
+            bend_smoothing_ms=args.bend_smoothing_ms,
+            no_pitch_bends=args.no_pitch_bends,
+            leading_silence_s=args.leading_silence_s,
+            seed=args.seed,
+            results_folder=args.results_folder,
+            api_key=args.api_key,
+        )
+
+        print("\ntext2vox Results:")
+        print(f"Files downloaded: {len(result['files']['files'])}")
+        print(f"\nResults saved to: {result['files']['folder']}")
+
+        return result
+
+    except AudialError as e:
+        print(f"Error: {str(e)}", file=sys.stderr)
+        sys.exit(1)
+
+
 def config_command(args) -> None:
     """Handle the config command."""
     try:
@@ -457,6 +559,8 @@ def cli():
     setup_generate_midi_parser(subparsers)
     setup_generate_samples_parser(subparsers)
     setup_generate_music_parser(subparsers)
+    setup_sound2vital_parser(subparsers)
+    setup_text2vox_parser(subparsers)
     setup_segment_parser(subparsers)
     setup_stem_split_parser(subparsers)
     setup_config_parser(subparsers)
