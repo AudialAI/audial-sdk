@@ -12,6 +12,8 @@ This document provides comprehensive documentation for the Audial SDK, including
   - [Audio Mastering](#audio-mastering)
   - [Sample Pack Generation](#sample-pack-generation)
   - [MIDI Generation](#midi-generation)
+  - [Sound-to-Vital Resynthesis (sound2vital)](#sound-to-vital-resynthesis-sound2vital)
+  - [Text-to-Vocal Synthesis (text2vox)](#text-to-vocal-synthesis-text2vox)
   - [Error Handling](#error-handling)
 - [Command Line Interface](#command-line-interface)
   - [Configuration Commands](#configuration-commands)
@@ -21,6 +23,8 @@ This document provides comprehensive documentation for the Audial SDK, including
   - [Audio Mastering Commands](#audio-mastering-commands)
   - [Sample Pack Generation Commands](#sample-pack-generation-commands)
   - [MIDI Generation Commands](#midi-generation-commands)
+  - [sound2vital Commands](#sound2vital-commands)
+  - [text2vox Commands](#text2vox-commands)
 - [Result Data Structure](#result-data-structure)
 
 ## Python API
@@ -420,15 +424,171 @@ for midi_file, file_path in midi["files"]["files"].items():
     print(f"{midi_file}: {file_path}")
 ```
 
+### Sound-to-Vital Resynthesis (sound2vital)
+
+Synthesize a [Vital](https://vital.audio/) synth preset that reproduces the timbre of a
+short audio clip. This is a paid function -- it requires an active Audial subscription in
+addition to a valid API key (see [Error Handling](#error-handling)).
+
+#### Function Signature
+
+```python
+audial.sound2vital(
+    file_path: str,
+    results_folder: Optional[str] = None,
+    api_key: Optional[str] = None,
+    max_wait: float = 360,
+    poll_interval: float = 5
+) -> Dict[str, Any]
+```
+
+#### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `file_path` | str | Yes | - | Path to the input audio file. Must be 20 seconds or shorter |
+| `results_folder` | str | No | `None` | Folder to save results (uses default if `None`) |
+| `api_key` | str | No | `None` | API key to use (uses default if `None`) |
+| `max_wait` | float | No | `360` | Maximum seconds to wait for completion (jobs typically take 60-250s) |
+| `poll_interval` | float | No | `5` | Seconds between execution status polls |
+
+#### Returns
+
+A dictionary containing:
+- `execution`: API response data
+- `files`: Information about downloaded files
+  - `folder`: Path to the results folder
+  - `files`: Dictionary mapping filenames to local file paths (the `.vital` preset plus
+    any generated render/keyboard/report files)
+- `preset`: Local path to the downloaded `.vital` preset, if the job produced one
+- `scores`: `generation_metadata.scores` -- `huang_similarity`, `at_threshold`,
+  `threshold`, `model` -- if present
+- `report`: `generation_metadata.report`, if present
+- `warnings`: `generation_metadata.warnings` list, if present
+
+#### Example
+
+```python
+import audial
+
+result = audial.sound2vital("path/to/clip.wav")
+
+print(f"Preset: {result['preset']}")
+print(f"Similarity score: {result['scores']['huang_similarity']}")
+```
+
+### Text-to-Vocal Synthesis (text2vox)
+
+Synthesize a sung vocal in the timbre of a short reference voice clip, following a melody
+(MIDI or audio) and lyrics. This is a paid function -- it requires an active Audial
+subscription in addition to a valid API key (see [Error Handling](#error-handling)).
+
+Exactly one of `midi_file` / `melody_audio_file` must be given -- the underlying worker
+needs one of the two to drive the melody.
+
+#### Function Signature
+
+```python
+audial.text2vox(
+    reference_file: str,
+    lyrics: str,
+    midi_file: Optional[str] = None,
+    melody_audio_file: Optional[str] = None,
+    word_timestamps_file: Optional[str] = None,
+    lyrics_mode: str = "auto",
+    reference_text: Optional[str] = None,
+    cfg_strength: Optional[float] = None,
+    nfe_steps: Optional[int] = None,
+    pitch_shift: Optional[float] = None,
+    strict_pitch: Optional[bool] = None,
+    bend_smoothing_ms: Optional[float] = None,
+    no_pitch_bends: Optional[bool] = None,
+    leading_silence_s: Optional[float] = None,
+    seed: Optional[int] = None,
+    results_folder: Optional[str] = None,
+    api_key: Optional[str] = None,
+    max_wait: float = 360,
+    poll_interval: float = 5
+) -> Dict[str, Any]
+```
+
+#### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `reference_file` | str | Yes | - | Path to a short (5-10s) reference voice clip -- the voice to sing in |
+| `lyrics` | str | Yes | - | The lyrics to sing |
+| `midi_file` | str | One of midi_file/melody_audio_file | `None` | Path to a MIDI file driving the melody |
+| `melody_audio_file` | str | One of midi_file/melody_audio_file | `None` | Path to override melody audio (skips strict-pitch synthesis) |
+| `word_timestamps_file` | str | No | `None` | Path to a Whisper word-timestamps JSON, used by auto-align |
+| `lyrics_mode` | str | No | `"auto"` | `"auto"` (word count matches MIDI notes, auto-aligns via word_timestamps), `"per_note"` (pipe-delimited, one token per note), or `"1to1"` (passed straight through) |
+| `reference_text` | str | No | `None` | What is said in the reference clip |
+| `cfg_strength` | float | No | `None` | Worker synthesis option |
+| `nfe_steps` | int | No | `None` | Worker synthesis option |
+| `pitch_shift` | float | No | `None` | Worker synthesis option |
+| `strict_pitch` | bool | No | `None` | Worker synthesis option |
+| `bend_smoothing_ms` | float | No | `None` | Worker synthesis option |
+| `no_pitch_bends` | bool | No | `None` | Worker synthesis option |
+| `leading_silence_s` | float | No | `None` | Worker synthesis option |
+| `seed` | int | No | `None` | Random seed for reproducibility |
+| `results_folder` | str | No | `None` | Folder to save results (uses default if `None`) |
+| `api_key` | str | No | `None` | API key to use (uses default if `None`) |
+| `max_wait` | float | No | `360` | Maximum seconds to wait for completion |
+| `poll_interval` | float | No | `5` | Seconds between execution status polls |
+
+#### Returns
+
+A dictionary containing:
+- `execution`: API response data
+- `files`: Information about downloaded files
+  - `folder`: Path to the results folder
+  - `files`: Dictionary mapping filenames to local file paths (the rendered wav plus any
+    MIDI actually used, if the worker returned one)
+- `metadata`: `generation_metadata` dict (`duration_s`, `sample_rate`), if present
+- `warnings`: `generation_metadata.warnings` list, if present
+
+#### Example
+
+```python
+import audial
+
+# Driven by a MIDI file
+result = audial.text2vox(
+    reference_file="path/to/voice_clip.wav",
+    lyrics="la la la la",
+    midi_file="path/to/melody.mid",
+)
+
+# Driven by melody audio instead
+result = audial.text2vox(
+    reference_file="path/to/voice_clip.wav",
+    lyrics="la la la la",
+    melody_audio_file="path/to/melody.wav",
+    lyrics_mode="per_note",
+)
+
+for name, path in result["files"]["files"].items():
+    print(f"{name}: {path}")
+```
+
 ### Error Handling
 
 The SDK provides custom exception classes for better error handling:
 
 ```python
-from audial.api.exceptions import AudialError, AudialAuthError, AudialAPIError
+from audial.api.exceptions import (
+    AudialError,
+    AudialAuthError,
+    AudialAPIError,
+    SubscriptionRequiredError,
+)
 
 try:
     result = audial.stem_split("path/to/audio.mp3")
+except SubscriptionRequiredError as e:
+    print(f"Subscription required: {e}")
+    # sound2vital and text2vox require an active Audial subscription
+    # (HTTP 402, code SUBSCRIPTION_REQUIRED) in addition to a valid API key
 except AudialAuthError as e:
     print(f"Authentication error: {e}")
     # Handle authentication issues
@@ -439,6 +599,10 @@ except AudialError as e:
     print(f"General error: {e}")
     # Handle other errors
 ```
+
+Note: `SubscriptionRequiredError` is a subclass of `AudialAPIError`, so an `except
+AudialAPIError` clause also catches it -- catch `SubscriptionRequiredError` first if you
+need to handle it differently (e.g. prompting the user to subscribe).
 
 ## Command Line Interface
 
@@ -672,6 +836,63 @@ audial generate-midi path/to/audio.mp3 --results-folder path/to/custom/folder
 
 ```bash
 audial generate-midi path/to/audio.mp3 --api-key your_custom_api_key
+```
+
+### sound2vital Commands
+
+Requires an active Audial subscription.
+
+#### Basic Usage
+
+```bash
+audial sound2vital path/to/clip.wav
+```
+
+#### Custom Results Folder
+
+```bash
+audial sound2vital path/to/clip.wav --results-folder path/to/custom/folder
+```
+
+#### Custom API Key
+
+```bash
+audial sound2vital path/to/clip.wav --api-key your_custom_api_key
+```
+
+### text2vox Commands
+
+Requires an active Audial subscription. Exactly one of `--midi` / `--melody-audio` must be
+given.
+
+#### Driven by a MIDI File
+
+```bash
+audial text2vox path/to/voice_clip.wav "la la la la" --midi path/to/melody.mid
+```
+
+#### Driven by Melody Audio
+
+```bash
+audial text2vox path/to/voice_clip.wav "la la la la" --melody-audio path/to/melody.wav
+```
+
+#### Lyrics Mode
+
+```bash
+audial text2vox path/to/voice_clip.wav "la|la|la|la" --midi path/to/melody.mid --lyrics-mode per_note
+```
+
+#### Custom Results Folder
+
+```bash
+audial text2vox path/to/voice_clip.wav "la la la la" --midi path/to/melody.mid --results-folder path/to/custom/folder
+```
+
+#### Custom API Key
+
+```bash
+audial text2vox path/to/voice_clip.wav "la la la la" --midi path/to/melody.mid --api-key your_custom_api_key
 ```
 
 ## Result Data Structure

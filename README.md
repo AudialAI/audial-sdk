@@ -14,6 +14,8 @@ The Audial SDK provides a user-friendly interface to Audial's powerful audio pro
 - **Audio Mastering**: Apply professional mastering to your tracks
 - **Sample Pack Generation**: Create reusable samples from audio tracks
 - **MIDI Generation**: Convert audio to MIDI data
+- **Sound-to-Vital Resynthesis**: Turn a short audio clip into a Vital synth preset (subscription required)
+- **Text-to-Vocal Synthesis**: Sing lyrics in the timbre of a reference voice clip (subscription required)
 
 The SDK supports both a Python API for integration into your projects and a command-line interface for direct use.
 
@@ -292,6 +294,29 @@ midi = audial.generate_midi(
 )
 ```
 
+### Sound-to-Vital Resynthesis
+
+Turn a short (<=20s) audio clip into a Vital synth preset. Requires an active Audial
+subscription:
+
+```python
+result = audial.sound2vital("path/to/clip.wav")
+print(f"Preset: {result['preset']}")
+```
+
+### Text-to-Vocal Synthesis
+
+Sing lyrics in the timbre of a reference voice clip, following a melody. Requires an
+active Audial subscription:
+
+```python
+result = audial.text2vox(
+    reference_file="path/to/voice_clip.wav",
+    lyrics="la la la la",
+    midi_file="path/to/melody.mid",
+)
+```
+
 ## Command Line Interface
 
 The SDK provides a powerful command-line interface:
@@ -314,6 +339,12 @@ audial generate-samples audio.mp3 --components drums,bass,melody
 
 # MIDI generation
 audial generate-midi audio.mp3 --bpm 120
+
+# Sound-to-Vital resynthesis (requires an active subscription)
+audial sound2vital clip.wav
+
+# Text-to-vocal synthesis (requires an active subscription)
+audial text2vox voice_clip.wav "la la la la" --midi melody.mid
 
 # Configuration
 audial config --api-key your_api_key_here
@@ -348,10 +379,17 @@ All functions return a consistent result structure:
 ## Error Handling
 
 ```python
-from audial.api.exceptions import AudialError, AudialAuthError, AudialAPIError
+from audial.api.exceptions import (
+    AudialError,
+    AudialAuthError,
+    AudialAPIError,
+    SubscriptionRequiredError,
+)
 
 try:
     result = audial.stem_split("path/to/audio.mp3")
+except SubscriptionRequiredError as e:
+    print(f"Subscription required: {e}")
 except AudialAuthError as e:
     print(f"Authentication error: {e}")
 except AudialAPIError as e:
@@ -374,6 +412,9 @@ The SDK includes example scripts in the [examples directory](examples/):
 - [Audio Mastering](examples/mastering.py)
 - [Sample Pack Generation](examples/sample_generation.py)
 - [MIDI Generation](examples/midi_generation.py)
+- [Music Generation](examples/music_generation.py)
+- [Sound-to-Vital Resynthesis](examples/sound2vital.py)
+- [Text-to-Vocal Synthesis](examples/text2vox.py)
 
 ## License
 
