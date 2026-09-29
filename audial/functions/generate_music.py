@@ -49,7 +49,7 @@ def generate_music(
     api_key: str = None,
 ) -> dict:
     """
-    Generate music using the Audial Music Generator (ACE-Step 1.5).
+    Generate music with the Audial music model.
 
     Args:
         prompt: Text describing desired music style, mood, genre.

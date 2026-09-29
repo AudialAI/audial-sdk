@@ -232,6 +232,6 @@ def test_env_override_base_url_trailing_slash_stripped(monkeypatch):
 
 
 def test_default_base_url_when_env_unset():
-    assert get_api_base_url() == "https://audial-api-prod-czos6.ondigitalocean.app/api"
+    assert get_api_base_url() == "https://api.audialmusic.ai/api"
     proxy = AudialProxy()
-    assert proxy.base_url == "https://audial-api-prod-czos6.ondigitalocean.app/api"
+    assert proxy.base_url == "https://api.audialmusic.ai/api"

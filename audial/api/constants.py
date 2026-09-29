@@ -7,7 +7,7 @@ import os
 # Production API host. Override with the AUDIAL_API_BASE_URL environment
 # variable to point the SDK at a different deployment (staging, a local mock
 # server, a self-hosted instance) without code changes.
-DEFAULT_API_BASE_URL = "https://audial-api-prod-czos6.ondigitalocean.app/api"
+DEFAULT_API_BASE_URL = "https://api.audialmusic.ai/api"
 
 
 def get_api_base_url() -> str:

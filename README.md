@@ -80,6 +80,14 @@ $env:AUDIAL_API_KEY = "your_api_key_here"
 $env:AUDIAL_USER_ID = "your_user_id_here"
 ```
 
+To point the SDK at a different Audial API host (for example a staging deployment), set `AUDIAL_API_BASE_URL` to that host's `/api` base:
+
+```bash
+export AUDIAL_API_BASE_URL=https://your-host.example.com/api
+```
+
+When it is unset the SDK talks to `https://api.audialmusic.ai/api`.
+
 ### Option 2: .env File
 
 Create a file named `.env` in your project directory:

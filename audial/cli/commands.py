@@ -138,7 +138,7 @@ def setup_generate_music_parser(subparsers):
     """Setup the parser for the generate command."""
     parser = subparsers.add_parser(
         'generate',
-        help='Generate music from a text prompt using the ACE-Step 1.5 model'
+        help='Generate music from a text prompt with the Audial music model'
     )
     parser.add_argument('prompt', help='Text describing the desired music style, mood, genre')
     parser.add_argument('--task-type', '-t', default='text2music',
