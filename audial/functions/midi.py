@@ -39,6 +39,7 @@ def generate_midi(
         Dict[str, Any]: Results data including paths to downloaded files.
         
     Raises:
+        AudialAPIError: If the job does not finish within ``max_wait`` seconds.
         AudialError: If MIDI generation fails.
     """
     # Initialize configuration
