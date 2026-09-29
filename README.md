@@ -14,8 +14,10 @@ The Audial SDK provides a user-friendly interface to Audial's powerful audio pro
 - **Audio Mastering**: Apply professional mastering to your tracks
 - **Sample Pack Generation**: Create reusable samples from audio tracks
 - **MIDI Generation**: Convert audio to MIDI data
-- **Sound-to-Vital Resynthesis**: Turn a short audio clip into a Vital synth preset (subscription required)
-- **Text-to-Vocal Synthesis**: Sing lyrics in the timbre of a reference voice clip (subscription required)
+- **Sound-to-Vital Resynthesis**: Turn a short audio clip into a Vital synth preset
+- **Text-to-Vocal Synthesis**: Sing lyrics in the timbre of a reference voice clip
+
+Every function requires an Audial account with an active subscription; without one the API answers HTTP 402 `SUBSCRIPTION_REQUIRED` and the SDK raises `SubscriptionRequiredError`. Files are always given as local paths — the SDK uploads them for you.
 
 The SDK supports both a Python API for integration into your projects and a command-line interface for direct use.
 
@@ -304,8 +306,7 @@ midi = audial.generate_midi(
 
 ### Sound-to-Vital Resynthesis
 
-Turn a short (<=20s) audio clip into a Vital synth preset. Requires an active Audial
-subscription:
+Turn a short (<=20s) audio clip into a Vital synth preset:
 
 ```python
 result = audial.sound2vital("path/to/clip.wav")
@@ -314,8 +315,7 @@ print(f"Preset: {result['preset']}")
 
 ### Text-to-Vocal Synthesis
 
-Sing lyrics in the timbre of a reference voice clip, following a melody. Requires an
-active Audial subscription:
+Sing lyrics in the timbre of a reference voice clip, following a melody:
 
 ```python
 result = audial.text2vox(
@@ -348,10 +348,10 @@ audial generate-samples audio.mp3 --components drums,bass,melody
 # MIDI generation
 audial generate-midi audio.mp3 --bpm 120
 
-# Sound-to-Vital resynthesis (requires an active subscription)
+# Sound-to-Vital resynthesis
 audial sound2vital clip.wav
 
-# Text-to-vocal synthesis (requires an active subscription)
+# Text-to-vocal synthesis
 audial text2vox voice_clip.wav "la la la la" --midi melody.mid
 
 # Configuration
