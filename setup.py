@@ -8,7 +8,7 @@ with open("requirements.txt", "r", encoding="utf-8") as f:
 
 setup(
     name="audial-sdk",
-    version="1.2.1",
+    version="1.2.2",
     author="Audial Team",
     author_email="support@audial.io",
     description="Python SDK for the Audial audio processing API",

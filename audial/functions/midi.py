@@ -21,7 +21,8 @@ def generate_midi(
     file_path: Union[str, List[str]],
     bpm: Optional[float] = None,
     results_folder: Optional[str] = None,
-    api_key: Optional[str] = None
+    api_key: Optional[str] = None,
+    max_wait: float = 900
 ) -> Dict[str, Any]:
     """
     Generate MIDI data from one or more audio files.
@@ -31,7 +32,9 @@ def generate_midi(
         bpm (float, optional): Override BPM for the MIDI generation.
         results_folder (str, optional): Folder to save results. Uses default if None.
         api_key (str, optional): API key to use. Uses default if None.
-        
+        max_wait: Seconds to wait for the job before raising AudialAPIError. Default 900
+            (cold-started workers can take several minutes).
+
     Returns:
         Dict[str, Any]: Results data including paths to downloaded files.
         
@@ -140,7 +143,7 @@ def generate_midi(
         max_retries = 20
         backoff = 5  # Initial backoff in seconds
         max_backoff = 30  # Maximum backoff in seconds
-        max_processing_time = 5 * 60  # 5 minutes timeout
+        max_processing_time = max_wait
         start_time = time.time()
         
         # Function to check if we have MIDI data in the result

@@ -47,6 +47,8 @@ def generate_music(
     negative_prompt: str = None,
     results_folder: str = None,
     api_key: str = None,
+    max_wait: float = 900,
+    poll_interval: float = 5,
 ) -> dict:
     """
     Generate music with the Audial music model.
@@ -78,6 +80,9 @@ def generate_music(
         negative_prompt: Text describing what to avoid.
         results_folder: Where to save output files. Default: audial_results/
         api_key: API key override.
+        max_wait: Seconds to wait for the job before raising AudialAPIError. Default 900
+            (cold-started workers can take several minutes).
+        poll_interval: Seconds between status checks. Default 5.
 
     Returns:
         dict with keys:
@@ -158,8 +163,6 @@ def generate_music(
 
     # Step 3: Poll for completion
     print("Waiting for generation to complete...")
-    max_wait = 300  # 5 minutes (matching frontend)
-    poll_interval = 5
     start_time = time.time()
     consecutive_errors = 0
 
