@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from audial.api.proxy import AudialProxy
 from audial.api.constants import API_BASE_URL
-from audial.api.exceptions import AudialError
+from audial.api.exceptions import AudialError, AudialAPIError
 from audial.utils.config import get_api_key, get_results_folder, get_user_id
 
 def generate_midi(
@@ -160,7 +160,7 @@ def generate_midi(
                 current_time = time.time()
                 elapsed = current_time - start_time
                 if elapsed > max_processing_time:
-                    raise AudialError(f"Processing timed out after {int(elapsed)} seconds")
+                    raise AudialAPIError(f"MIDI generation timed out after {max_wait}s")
                 
                 try:
                     # Check general execution status
@@ -289,6 +289,9 @@ def generate_midi(
             urls_str = "\n".join([f"- {url}" for url in midi_urls])
             raise AudialError(f"Failed to download MIDI files. You may need to manually download from these URLs:\n{urls_str}")
     
+    except AudialAPIError:
+        # Preserve AudialAPIError (e.g. timeout) as-is rather than rewrapping it.
+        raise
     except Exception as e:
         # Handle errors
         raise AudialError(f"MIDI generation failed: {str(e)}")

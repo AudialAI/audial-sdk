@@ -2,7 +2,7 @@
 Audial SDK: A Python package for interacting with the Audial audio processing API.
 """
 
-__version__ = "1.2.0"
+__version__ = "1.2.2"
 
 # Import and re-export public functions
 from audial.functions.stem_split import stem_split
