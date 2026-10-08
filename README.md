@@ -58,11 +58,30 @@ pip install -e .
 
 ## Configuration
 
-After installation, you need to configure your API key and User ID. You have several options:
+### Sign in (recommended)
+
+```bash
+audial login
+```
+
+This opens a page in your browser. Approve it and you are signed in: there is no API key or
+user ID to copy. The sign-in is saved on your computer (`~/.audial/credentials.json`, readable
+only by you) and is used by the `audial` command, by Python scripts that `import audial`, and
+by the Audial MCP server. `audial whoami` shows the account in use, `audial logout` signs out,
+and each connected computer can be disconnected under Apps & API Keys in your profile at
+audialmusic.ai. On a machine without a browser, `audial login --no-browser` prints the link
+to open elsewhere. From Python, `audial.login()` does the same.
+
+### API keys (servers and CI)
+
+Where nobody is there to sign in, create an API key under Apps & API Keys in your profile and
+give it to the SDK in one of the ways below. A key that starts with `aud_` is all you need;
+`AUDIAL_USER_ID` is only required with an older key that does not. A key set in the
+environment takes priority over a saved sign-in.
 
 ### Option 1: Environment Variables
 
-Set the `AUDIAL_API_KEY` and `AUDIAL_USER_ID` environment variables:
+Set the `AUDIAL_API_KEY` environment variable (and `AUDIAL_USER_ID` with an older key):
 
 **Linux/macOS:**
 ```bash

@@ -19,6 +19,8 @@ from audial.functions.sound2vital import sound2vital
 from audial.functions.text2vox import text2vox
 from audial.utils.config import get_api_key, get_results_folder, set_api_key, set_results_folder, get_user_id, set_user_id
 from audial.api.exceptions import AudialError
+from audial.api import device_login
+from audial.utils import config as audial_config
 
 
 def setup_analyze_parser(subparsers):
@@ -231,6 +233,79 @@ def setup_config_parser(subparsers):
     parser.add_argument('--results-folder', help='Set the results folder path')
     parser.add_argument('--show', action='store_true', help='Show current configuration')
     parser.set_defaults(func=config_command)
+
+
+def setup_login_parsers(subparsers):
+    """Setup the parsers for the login, logout and whoami commands."""
+    parser = subparsers.add_parser(
+        'login',
+        help='Sign in to Audial through your browser (no API key to copy)'
+    )
+    parser.add_argument('--no-browser', action='store_true',
+                       help='Print the sign-in link instead of opening a browser')
+    parser.set_defaults(func=login_command)
+
+    parser = subparsers.add_parser('logout', help='Sign out of Audial on this computer')
+    parser.set_defaults(func=logout_command)
+
+    parser = subparsers.add_parser('whoami', help='Show which Audial account is in use')
+    parser.set_defaults(func=whoami_command)
+
+
+def login_command(args) -> None:
+    """Handle the login command."""
+    def show(pending):
+        print("Sign in to Audial in your browser:\n")
+        print(f"  {pending.verification_uri_complete}\n")
+        print(f"Check that the page shows this code: {pending.user_code}")
+        print("Waiting for you to approve...", flush=True)
+
+    try:
+        credentials = device_login.login(
+            client_name='audial-cli', open_browser=not args.no_browser, on_prompt=show
+        )
+    except KeyboardInterrupt:
+        print("\nSign-in cancelled.", file=sys.stderr)
+        sys.exit(130)
+    except AudialError as e:
+        print(f"Error: {str(e)}", file=sys.stderr)
+        sys.exit(1)
+    print(f"\nSigned in as {credentials.get('email') or credentials['user_id']}.")
+    if os.environ.get('AUDIAL_API_KEY'):
+        print("Note: AUDIAL_API_KEY is set in this shell and takes priority over this sign-in.")
+
+
+def logout_command(args) -> None:
+    """Handle the logout command."""
+    if device_login.logout():
+        print("Signed out.")
+    else:
+        print("Not signed in.")
+
+
+def whoami_command(args) -> None:
+    """Handle the whoami command."""
+    api_key = get_api_key()
+    if not api_key:
+        print("Not signed in. Run `audial login`.", file=sys.stderr)
+        sys.exit(1)
+    credentials = audial_config.load_credentials()
+    if os.environ.get('AUDIAL_API_KEY'):
+        source = "the AUDIAL_API_KEY environment variable"
+    elif credentials and credentials['api_key'] == api_key:
+        source = "`audial login`"
+    else:
+        source = "`audial config --api-key`"
+    try:
+        account = device_login.whoami(api_key) if api_key.startswith('aud_') else {
+            'user_id': get_user_id(api_key), 'email': None,
+        }
+    except AudialError as e:
+        print(f"Error: {str(e)}", file=sys.stderr)
+        sys.exit(1)
+    print(f"Account: {account.get('email') or account.get('user_id') or 'unknown'}")
+    print(f"User ID: {account.get('user_id') or 'Not set'}")
+    print(f"Credentials from: {source}")
 
 
 def analyze_command(args) -> Dict[str, Any]:
@@ -515,7 +590,10 @@ def config_command(args) -> None:
         # Show current configuration if requested or if no other options provided
         if args.show or (not args.api_key and not args.user_id and not args.results_folder):
             current_api_key = get_api_key()
-            current_user_id = get_user_id()  # Add this
+            try:
+                current_user_id = get_user_id()
+            except AudialError:
+                current_user_id = None
             current_results_folder = get_results_folder()
             
             print("\nCurrent Configuration:")
@@ -564,6 +642,7 @@ def cli():
     setup_segment_parser(subparsers)
     setup_stem_split_parser(subparsers)
     setup_config_parser(subparsers)
+    setup_login_parsers(subparsers)
     
     # Parse arguments
     args = parser.parse_args()

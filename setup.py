@@ -24,7 +24,7 @@ DEV_REQUIRES = [
 
 setup(
     name="audial-sdk",
-    version="1.2.3",
+    version="1.3.0",
     author="Audial Team",
     author_email="support@audial.io",
     description="Python SDK for the Audial audio processing API",
