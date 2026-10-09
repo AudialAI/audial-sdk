@@ -2,6 +2,8 @@
 
 ![Audial Logo](./assets/Rectangle110447.png)
 
+[audialmusic.ai](https://audialmusic.ai) · [API reference](https://audialmusic.ai/resources/api-reference)
+
 A powerful Python SDK for audio analysis and manipulation through the Audial API.
 
 ## Overview
@@ -47,7 +49,7 @@ If you want the latest development version, you can install directly from the Gi
 
 ```bash
 # Clone the repository
-git clone https://github.com/audial/audial-sdk.git
+git clone https://github.com/AudialAI/audial-sdk.git
 
 # Navigate to the project directory
 cd audial-sdk
@@ -430,4 +432,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Support
 
-For issues, questions, or feedback, please [create an issue](https://github.com/audial/audial-sdk/issues) on our GitHub repository or contact contact@audialmusic.ai.
+For issues, questions, or feedback, please [create an issue](https://github.com/AudialAI/audial-sdk/issues) on our GitHub repository or contact contact@audialmusic.ai.
+
+---
+
+Powered by [Audial](https://audialmusic.ai).
