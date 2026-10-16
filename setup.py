@@ -27,14 +27,17 @@ setup(
     version="1.3.0",
     author="Audial Team",
     author_email="support@audial.io",
-    description="Python SDK for the Audial audio processing API",
+    description="Python SDK for Audial: AI stem splitting, mastering, MIDI generation, sample packs, segmentation, music generation, resynthesis and vocal synthesis",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/audial/audial-sdk",  # Update this to your actual GitHub URL
+    url="https://audialmusic.ai",
     project_urls={
-        "Bug Tracker": "https://github.com/audial/audial-sdk/issues",
-        "Documentation": "https://github.com/audial/audial-sdk/blob/main/API_DOCUMENTATION.md",
+        "Homepage": "https://audialmusic.ai",
+        "Documentation": "https://audialmusic.ai/resources/api-reference",
+        "Repository": "https://github.com/AudialAI/audial-sdk",
+        "Bug Tracker": "https://github.com/AudialAI/audial-sdk/issues",
     },
+    keywords=["audio", "music", "ai", "stem-separation", "mastering", "midi"],
     packages=find_packages(),
     classifiers=[
         "Development Status :: 5 - Production/Stable",  # Add this
