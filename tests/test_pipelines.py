@@ -437,3 +437,50 @@ def test_segment_raises_when_the_pipeline_returned_no_segmentation(audio_file, t
             segment(audio_file, results_folder=str(tmp_path))
 
     assert "did not produce expected results" in str(excinfo.value)
+
+
+def test_run_retries_transient_poll_errors(monkeypatch):
+    from audial import pipelines
+    from audial.api.exceptions import AudialAPIError
+
+    calls = {"n": 0}
+
+    class Proxy:
+        def __init__(self, *a, **k):
+            pass
+
+        def create_pipeline(self, *a, **k):
+            return {"pipelineId": "p1", "state": "queued", "steps": []}
+
+        def get_pipeline(self, pid):
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise AudialAPIError("Failed to get pipeline p1: HTTP 429", status_code=429)
+            return {"pipelineId": "p1", "state": "completed", "steps": [], "outputs": {}}
+
+    monkeypatch.setattr(pipelines, "AudialProxy", Proxy)
+    monkeypatch.setattr(pipelines.time, "sleep", lambda *_: None)
+    status = pipelines.run("sample-pack", __file__, wait=True, poll_interval=0)
+    assert status["state"] == "completed"
+    assert calls["n"] == 3
+
+
+def test_run_gives_up_on_non_transient_poll_errors(monkeypatch):
+    import pytest
+    from audial import pipelines
+    from audial.api.exceptions import AudialAPIError
+
+    class Proxy:
+        def __init__(self, *a, **k):
+            pass
+
+        def create_pipeline(self, *a, **k):
+            return {"pipelineId": "p1", "state": "queued", "steps": []}
+
+        def get_pipeline(self, pid):
+            raise AudialAPIError("Failed to get pipeline p1: HTTP 404", status_code=404)
+
+    monkeypatch.setattr(pipelines, "AudialProxy", Proxy)
+    monkeypatch.setattr(pipelines.time, "sleep", lambda *_: None)
+    with pytest.raises(AudialAPIError):
+        pipelines.run("sample-pack", __file__, wait=True, poll_interval=0)

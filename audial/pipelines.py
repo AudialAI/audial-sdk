@@ -50,7 +50,7 @@ from audial.api.constants import (
     PIPELINE_TERMINAL_STATES,
     PIPELINES,
 )
-from audial.api.exceptions import AudialError
+from audial.api.exceptions import AudialAPIError, AudialError
 from audial.api.proxy import AudialProxy
 
 # NOTE: `list` below shadows the builtin inside this module on purpose --
@@ -66,6 +66,15 @@ __all__ = [
 ]
 
 ProgressCallback = Callable[[Dict[str, Any]], Any]
+
+
+MAX_TRANSIENT_POLL_ERRORS = 8
+
+
+def _is_transient(exc: "AudialAPIError") -> bool:
+    """429, any 5xx, or a transport error (no status code) is worth retrying."""
+    code = getattr(exc, "status_code", None)
+    return code is None or code == 429 or (isinstance(code, int) and code >= 500)
 
 
 def run(
@@ -128,9 +137,20 @@ def run(
     if not wait:
         return status
 
+    # A status poll that fails transiently (rate limit, gateway hiccup, dropped connection) is
+    # retried with backoff rather than abandoning a pipeline that is still running server-side.
+    transient = 0
     while status.get("state") not in PIPELINE_TERMINAL_STATES:
         time.sleep(poll_interval)
-        status = proxy.get_pipeline(pipeline_id)
+        try:
+            status = proxy.get_pipeline(pipeline_id)
+        except AudialAPIError as exc:
+            if not _is_transient(exc) or transient >= MAX_TRANSIENT_POLL_ERRORS:
+                raise
+            transient += 1
+            time.sleep(min(poll_interval * transient, 60))
+            continue
+        transient = 0
         _notify(on_progress, status)
 
     _raise_if_unsuccessful(status, name)
