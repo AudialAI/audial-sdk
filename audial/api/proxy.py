@@ -21,7 +21,12 @@ from audial.api.constants import (
     get_api_base_url,
 )
 from audial.api.auth import get_auth_headers
-from audial.api.exceptions import AudialAPIError, AudialAuthError, SubscriptionRequiredError
+from audial.api.exceptions import (
+    AudialAPIError,
+    AudialAuthError,
+    AudialError,
+    SubscriptionRequiredError,
+)
 from audial.utils.file_utils import get_mime_type, sanitize_filename
 from audial.utils.config import get_user_id
 
@@ -43,6 +48,65 @@ def _check_subscription_required(response: "requests.Response") -> None:
         pass
 
     raise SubscriptionRequiredError(message, response=response)
+
+
+def _pipeline_option_fields(options: Optional[Dict[str, Any]]) -> List[Tuple[str, str]]:
+    """
+    Flatten pipeline options into `options.<name>` multipart form fields.
+
+    A list value repeats its key once per item (the conventional form encoding
+    for an array), booleans go out lowercased, and None values are dropped so
+    the server applies its own default.
+    """
+    fields: List[Tuple[str, str]] = []
+    for name, value in (options or {}).items():
+        if value is None:
+            continue
+        key = f"options.{name}"
+        if isinstance(value, (list, tuple)):
+            for item in value:
+                if item is not None:
+                    fields.append((key, str(item)))
+        elif isinstance(value, bool):
+            fields.append((key, "true" if value else "false"))
+        else:
+            fields.append((key, str(value)))
+    return fields
+
+
+def _pipeline_response(response: "requests.Response", context: str) -> Dict[str, Any]:
+    """
+    Turn a /pipelines response into its JSON body, or raise.
+
+    The API's error bodies carry a machine-readable `code` (INVALID_PIPELINE,
+    PIPELINE_NOT_FOUND, STEMS_REQUIRED, SUBSCRIPTION_REQUIRED, ...); it is kept
+    in the message so callers and users see which one came back.
+    """
+    _check_subscription_required(response)
+    if response.status_code in (401, 403):
+        raise AudialAuthError(f"Authentication failed: {response.status_code}")
+
+    if response.status_code >= 400:
+        message = f"{context}: HTTP {response.status_code}"
+        try:
+            error_data = response.json()
+        except ValueError:
+            error_data = None
+        if isinstance(error_data, dict):
+            detail = error_data.get("error") or error_data.get("message")
+            code = error_data.get("code")
+            if detail:
+                message = f"{context}: {detail}"
+            if code:
+                message = f"{message} ({code})"
+        raise AudialAPIError(
+            message, status_code=response.status_code, response=response
+        )
+
+    try:
+        return response.json()
+    except ValueError:
+        raise AudialAPIError(f"{context}: the API returned a non-JSON response")
 
 
 class AudialProxy:
@@ -1337,3 +1401,170 @@ class AudialProxy:
             
         except requests.exceptions.RequestException as e:
             raise AudialAPIError(f"Request error: {str(e)}")
+    # -----------------------------------------------------------------
+    # Pipelines: multi-step jobs (stem split -> sample pack/segmentation)
+    # run and tracked server-side as a single job.
+    # -----------------------------------------------------------------
+
+    def create_pipeline(
+        self,
+        pipeline: str,
+        file_path: Optional[str] = None,
+        original: Optional[Dict[str, Any]] = None,
+        options: Optional[Dict[str, Any]] = None,
+        from_exe_id: Optional[str] = None,
+        callback_url: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Start a pipeline: POST /pipelines.
+
+        Either `file_path` (uploaded as the `original` multipart file part,
+        with `pipeline` and `options.*` sent as form fields, the same shape
+        /functions/run/:fn accepts) or `original` ({filename, url} JSON for a
+        file that is already in storage) must be given.
+
+        Args:
+            pipeline (str): Pipeline name, e.g. "sample-pack" or "segmentation".
+            file_path (str, optional): Local audio file to upload.
+            original (Dict[str, Any], optional): Already-uploaded file
+                ({filename, url}), used instead of file_path.
+            options (Dict[str, Any], optional): Pipeline options
+                (components, genre, bpm, keyString, featuresToExtract).
+            from_exe_id (str, optional): A finished stem-split execution to
+                start from, which skips the stem-split step.
+            callback_url (str, optional): URL the API POSTs the final status to.
+
+        Returns:
+            Dict[str, Any]: The initial PipelineStatus (state "queued").
+        """
+        if not file_path and not original:
+            raise AudialError("create_pipeline needs either file_path or original")
+
+        user_id = get_user_id()
+        url = f"{self.base_url}/pipelines"
+        headers = get_auth_headers(self.api_key)
+
+        if file_path:
+            if not os.path.isfile(file_path):
+                raise FileNotFoundError(f"File not found: {file_path}")
+
+            filename = os.path.basename(file_path)
+            mime_type = get_mime_type(file_path)
+
+            # Form fields, as a list of pairs so list-valued options can repeat
+            # a key (options.components=drums&options.components=bass), which
+            # is how the multipart function routes receive array fields.
+            fields: List[Tuple[str, str]] = [("pipeline", pipeline), ("userId", user_id)]
+            for key, value in _pipeline_option_fields(options):
+                fields.append((key, value))
+            if from_exe_id:
+                fields.append(("from.exeId", from_exe_id))
+            if callback_url:
+                fields.append(("callbackUrl", callback_url))
+
+            # Content-Type is set by requests for the multipart body.
+            headers.pop("Content-Type", None)
+
+            with open(file_path, "rb") as f:
+                files = {"original": (filename, f, mime_type)}
+                try:
+                    response = self.session.post(
+                        url,
+                        headers=headers,
+                        data=fields,
+                        files=files,
+                        timeout=REQUEST_TIMEOUT,
+                    )
+                except requests.exceptions.RequestException as e:
+                    raise AudialAPIError(f"Request error: {str(e)}")
+        else:
+            body: Dict[str, Any] = {
+                "pipeline": pipeline,
+                "userId": user_id,
+                "original": original,
+            }
+            if options:
+                body["options"] = {k: v for k, v in options.items() if v is not None}
+            if from_exe_id:
+                body["from"] = {"exeId": from_exe_id}
+            if callback_url:
+                body["callbackUrl"] = callback_url
+
+            try:
+                response = self.session.post(
+                    url, headers=headers, json=body, timeout=REQUEST_TIMEOUT
+                )
+            except requests.exceptions.RequestException as e:
+                raise AudialAPIError(f"Request error: {str(e)}")
+
+        return _pipeline_response(response, "Failed to start pipeline")
+
+    def get_pipeline(self, pipeline_id: str) -> Dict[str, Any]:
+        """
+        Get a pipeline's status: GET /pipelines/{id}.
+
+        Args:
+            pipeline_id (str): The pipeline ID.
+
+        Returns:
+            Dict[str, Any]: The PipelineStatus.
+        """
+        url = f"{self.base_url}/pipelines/{pipeline_id}"
+        headers = get_auth_headers(self.api_key)
+
+        try:
+            response = self.session.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
+        except requests.exceptions.RequestException as e:
+            raise AudialAPIError(f"Request error: {str(e)}")
+
+        return _pipeline_response(response, f"Failed to get pipeline {pipeline_id}")
+
+    def cancel_pipeline(self, pipeline_id: str) -> Dict[str, Any]:
+        """
+        Cancel a pipeline: POST /pipelines/{id}/cancel.
+
+        A pipeline that is already in a terminal state is returned unchanged.
+
+        Args:
+            pipeline_id (str): The pipeline ID.
+
+        Returns:
+            Dict[str, Any]: The PipelineStatus after the cancel request.
+        """
+        url = f"{self.base_url}/pipelines/{pipeline_id}/cancel"
+        headers = get_auth_headers(self.api_key)
+
+        try:
+            response = self.session.post(url, headers=headers, timeout=REQUEST_TIMEOUT)
+        except requests.exceptions.RequestException as e:
+            raise AudialAPIError(f"Request error: {str(e)}")
+
+        return _pipeline_response(response, f"Failed to cancel pipeline {pipeline_id}")
+
+    def list_pipelines(
+        self, limit: int = 20, cursor: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        List the caller's pipelines, newest first: GET /pipelines.
+
+        Args:
+            limit (int, optional): Page size (default 20).
+            cursor (str, optional): Cursor from a previous page's nextCursor.
+
+        Returns:
+            Dict[str, Any]: {"items": [PipelineStatus, ...], "nextCursor": str?}
+        """
+        url = f"{self.base_url}/pipelines"
+        headers = get_auth_headers(self.api_key)
+        params: Dict[str, Any] = {"limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+
+        try:
+            response = self.session.get(
+                url, headers=headers, params=params, timeout=REQUEST_TIMEOUT
+            )
+        except requests.exceptions.RequestException as e:
+            raise AudialAPIError(f"Request error: {str(e)}")
+
+        return _pipeline_response(response, "Failed to list pipelines")

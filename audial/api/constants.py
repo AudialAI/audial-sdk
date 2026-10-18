@@ -130,3 +130,44 @@ FILETYPE_REFERENCE = "reference"
 FILETYPE_MIDI = "midi"
 FILETYPE_MELODY = "melody"
 FILETYPE_WORD_TS = "word_ts"
+
+# ---------------------------------------------------------------------------
+# Pipelines (POST /pipelines): multi-step jobs run as one API call.
+# ---------------------------------------------------------------------------
+
+PIPELINE_SAMPLE_PACK = "sample-pack"
+PIPELINE_SEGMENTATION = "segmentation"
+
+# Pipeline name -> ordered step names, mirroring the server's PIPELINES table.
+PIPELINES = {
+    PIPELINE_SEGMENTATION: ["stem-split", "segmentation"],
+    PIPELINE_SAMPLE_PACK: ["stem-split", "sample-pack"],
+}
+
+# Pipeline states
+PIPELINE_STATE_QUEUED = "queued"
+PIPELINE_STATE_RUNNING = "running"
+PIPELINE_STATE_COMPLETED = "completed"
+PIPELINE_STATE_FAILED = "failed"
+PIPELINE_STATE_CANCELLED = "cancelled"
+
+# A pipeline in one of these states will not change again.
+PIPELINE_TERMINAL_STATES = (
+    PIPELINE_STATE_COMPLETED,
+    PIPELINE_STATE_FAILED,
+    PIPELINE_STATE_CANCELLED,
+)
+
+# Step states
+PIPELINE_STEP_PENDING = "pending"
+PIPELINE_STEP_RUNNING = "running"
+PIPELINE_STEP_COMPLETED = "completed"
+PIPELINE_STEP_FAILED = "failed"
+PIPELINE_STEP_SKIPPED = "skipped"
+PIPELINE_STEP_CANCELLED = "cancelled"
+
+# Seconds between GET /pipelines/{id} polls while waiting for a pipeline.
+DEFAULT_PIPELINE_POLL_INTERVAL = 5
+
+# Default page size for GET /pipelines.
+DEFAULT_PIPELINE_LIST_LIMIT = 20
