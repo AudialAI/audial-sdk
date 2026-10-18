@@ -251,7 +251,10 @@ print(f"Key: {analysis['analysis']['key']}")
 
 ### Audio Segmentation
 
-Segment an audio track into sections and extract features:
+Segment an audio track into sections and extract features. Segmentation
+analyses separated stems, so this runs as a **pipeline**: the track is split
+into stems first, then segmented, in a single API call. Tempo and key are
+detected automatically.
 
 ```python
 segments = audial.segment(
@@ -261,6 +264,16 @@ segments = audial.segment(
     features=["energy", "tempo", "loudness", "danceability"],
     genre="electronic"
 )
+```
+
+`segments["execution"]` is the pipeline status, so you can see what each step
+did. The same job can be run directly:
+
+```python
+status = audial.pipelines.run("segmentation", "path/to/audio.mp3",
+                              options={"genre": "electronic"})
+print(status["outputs"]["segmentation"])   # analysis JSON URLs
+print(status["outputs"]["stems"])          # the stems it made on the way
 ```
 
 ### Audio Mastering
@@ -280,7 +293,10 @@ mastered = audial.master(
 
 ### Sample Pack Generation
 
-Generate a sample pack from an audio track:
+Generate a sample pack from an audio track. A sample pack is built from
+separated stems, so this runs as a **pipeline**: the track is split into stems
+first, then the pack is built, in a single API call. Tempo and key are detected
+automatically.
 
 ```python
 samples = audial.generate_samples(
@@ -289,6 +305,16 @@ samples = audial.generate_samples(
     components=["drums", "bass", "melody"],
     genre="Tech House"
 )
+```
+
+`samples["execution"]` is the pipeline status, so you can see what each step
+did. The same job can be run directly:
+
+```python
+status = audial.pipelines.run("sample-pack", "path/to/audio.mp3",
+                              options={"components": ["drums", "bass"],
+                                       "genre": "Tech House"})
+print(status["outputs"]["samples"])   # sample URLs
 ```
 
 ### MIDI Generation
@@ -305,6 +331,48 @@ midi = audial.generate_midi(
     bpm=140
 )
 ```
+
+### Pipelines
+
+A pipeline is several Audial functions run as one job: you send the file once
+and the API feeds each step's output into the next.
+
+| Pipeline | Steps |
+|---|---|
+| `sample-pack` | `stem-split` -> `sample-pack` |
+| `segmentation` | `stem-split` -> `segmentation` |
+
+```python
+status = audial.pipelines.run(
+    "sample-pack",
+    "path/to/audio.mp3",
+    options={"components": ["drums", "bass", "melody"], "genre": "Tech House"},
+    on_progress=lambda s: print(s["state"], s.get("currentStep")),
+)
+
+print(status["state"])               # "completed"
+print(status["outputs"]["samples"])  # sample URLs
+print(status["outputs"]["stems"])    # the stems made on the way
+```
+
+`run()` uploads the file, polls until the pipeline finishes, and raises
+`AudialError` naming the step that failed if one does. Other calls:
+
+```python
+audial.pipelines.run(name, file_path, options=None, wait=True,
+                     poll_interval=5, on_progress=None, api_key=None)
+audial.pipelines.get(pipeline_id)       # current status
+audial.pipelines.cancel(pipeline_id)    # stop it
+audial.pipelines.list(limit=20)         # {"items": [...], "nextCursor": ...}
+```
+
+Options are `components`, `genre`, `bpm`, `keyString` and `featuresToExtract`;
+everything omitted gets the API's default, and BPM and key are detected from
+the file when you do not send them.
+
+`generate_samples()` and `segment()` run these pipelines for you and download
+the results, so use `pipelines.run()` directly when you want the URLs, the
+per-step timings, or control over polling.
 
 ### Sound-to-Vital Resynthesis
 
@@ -346,6 +414,10 @@ audial master audio.mp3 --reference reference.mp3
 
 # Sample pack generation
 audial generate-samples audio.mp3 --components drums,bass,melody
+
+# Pipelines: stem split + sample pack (or segmentation) in one call
+audial pipeline sample-pack audio.mp3 --genre "Tech House" --components drums bass
+audial pipeline segmentation audio.mp3 --json
 
 # MIDI generation
 audial generate-midi audio.mp3 --bpm 120

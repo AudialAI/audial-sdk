@@ -6,6 +6,7 @@ This document provides comprehensive documentation for the Audial SDK, including
 
 - [Python API](#python-api)
   - [Configuration](#configuration)
+  - [Pipelines](#pipelines)
   - [Stem Splitting](#stem-splitting)
   - [Audio Analysis](#audio-analysis)
   - [Audio Segmentation](#audio-segmentation)
@@ -17,6 +18,7 @@ This document provides comprehensive documentation for the Audial SDK, including
   - [Error Handling](#error-handling)
 - [Command Line Interface](#command-line-interface)
   - [Configuration Commands](#configuration-commands)
+  - [Pipeline Commands](#pipeline-commands)
   - [Stem Splitting Commands](#stem-splitting-commands)
   - [Audio Analysis Commands](#audio-analysis-commands)
   - [Audio Segmentation Commands](#audio-segmentation-commands)
@@ -56,6 +58,123 @@ audial.config.set_results_folder("path/to/custom/folder")
 # Get current results folder
 results_folder = audial.config.get_results_folder()
 ```
+
+### Pipelines
+
+A pipeline runs several Audial functions as one job: the file is uploaded once
+and the API feeds each step's output into the next. Both pipelines start by
+separating stems, because their second step needs stems to work on.
+
+| Pipeline | Steps | Outputs |
+|---|---|---|
+| `sample-pack` | `stem-split` -> `sample-pack` | `outputs.stems`, `outputs.samples` |
+| `segmentation` | `stem-split` -> `segmentation` | `outputs.stems`, `outputs.segmentation` |
+
+#### Function Signatures
+
+```python
+audial.pipelines.run(
+    name: str,
+    file_path: str,
+    options: Optional[Dict[str, Any]] = None,
+    wait: bool = True,
+    poll_interval: float = 5,
+    on_progress: Optional[Callable[[Dict[str, Any]], Any]] = None,
+    api_key: Optional[str] = None
+) -> Dict[str, Any]
+
+audial.pipelines.get(pipeline_id: str, api_key: Optional[str] = None) -> Dict[str, Any]
+audial.pipelines.cancel(pipeline_id: str, api_key: Optional[str] = None) -> Dict[str, Any]
+audial.pipelines.list(limit: int = 20, cursor: Optional[str] = None,
+                      api_key: Optional[str] = None) -> Dict[str, Any]
+```
+
+#### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `name` | str | Yes | - | `"sample-pack"` or `"segmentation"` |
+| `file_path` | str | Yes | - | Path to the local audio file; it is uploaded with the request |
+| `options` | Dict | No | `None` | See the options table below |
+| `wait` | bool | No | `True` | Poll until the pipeline finishes; `False` returns the queued status at once |
+| `poll_interval` | float | No | `5` | Seconds between status polls |
+| `on_progress` | Callable | No | `None` | Called with the status dict for the first response and after every poll |
+| `api_key` | str | No | `None` | API key to use (uses default if `None`) |
+
+#### Options
+
+| Option | Type | Applies to | Description |
+|--------|------|-----------|-------------|
+| `components` | List[str] | both | `["drums", "bass", "melody"]` for `sample-pack`; `["bass", "beat", "melody", "vocal"]` for `segmentation` |
+| `genre` | str | both | Genre hint; same list as [Audio Segmentation](#audio-segmentation) |
+| `bpm` | float | both | Overrides the detected tempo |
+| `keyString` | str | both | Overrides the detected key, e.g. `"A minor"` |
+| `featuresToExtract` | List[str] | `segmentation` | Features to extract per section |
+
+Anything you omit gets the API's default, and tempo and key are detected from
+the file when you do not send them.
+
+#### Returns
+
+The API's pipeline status dictionary:
+
+```python
+{
+  "pipelineId": "...",
+  "pipeline": "sample-pack",
+  "state": "queued" | "running" | "completed" | "failed" | "cancelled",
+  "currentStep": "sample-pack",
+  "createdAt": ..., "updatedAt": ..., "startedAt": ..., "endedAt": ..., "durationMs": ...,
+  "steps": [
+    {"name": "stem-split", "state": "completed", "exeId": "...", "durationMs": 41000},
+    {"name": "sample-pack", "state": "running", "exeId": "...", "subStage": "rendering"}
+  ],
+  "outputs": {
+    "stems": {"drumsmp3": {"filename": "...", "url": "..."}, ...},
+    "samples": ["https://...", ...],
+    "segmentation": ["https://...", ...]
+  },
+  "original": {"filename": "...", "url": "..."},
+  "options": {...},
+  "error": {"step": "...", "code": "...", "message": "..."}
+}
+```
+
+`pipelines.list()` returns the page envelope: `{"items": [status, ...],
+"nextCursor": "..."}`.
+
+A pipeline that ends `failed` or `cancelled` raises `AudialError`, with the
+failing step's name and the worker's message in the text. An account whose free
+allowance is used up raises `SubscriptionRequiredError` (HTTP 402).
+
+#### Example
+
+```python
+import audial
+
+status = audial.pipelines.run(
+    "sample-pack",
+    "path/to/audio.mp3",
+    options={"components": ["drums", "bass"], "genre": "Tech House"},
+    on_progress=lambda s: print(s["state"], s.get("currentStep")),
+)
+
+for url in status["outputs"]["samples"]:
+    print(url)
+
+# Start one and come back to it later
+queued = audial.pipelines.run("segmentation", "path/to/audio.mp3", wait=False)
+later = audial.pipelines.get(queued["pipelineId"])
+audial.pipelines.cancel(queued["pipelineId"])
+
+# Your recent pipelines, newest first
+for item in audial.pipelines.list(limit=10)["items"]:
+    print(item["pipeline"], item["state"])
+```
+
+`audial.generate_samples()` and `audial.segment()` run these pipelines for you
+and download the results; call `pipelines.run()` directly when you want the
+output URLs, the per-step timings, or control over polling.
 
 ### Stem Splitting
 
@@ -182,6 +301,13 @@ print(f"Key: {key}")
 
 Segment an audio track into logical sections and analyze its components.
 
+Segmentation runs on separated stems, so this function runs the `segmentation`
+[pipeline](#pipelines): the track is split into stems first and then segmented,
+in a single API call. Tempo and key are detected automatically. `execution` in
+the result is the pipeline status, so every step and its timing is visible
+there; `audial.pipelines.run("segmentation", ...)` is the same job without the
+downloads.
+
 #### Function Signature
 
 ```python
@@ -192,7 +318,9 @@ audial.segment(
     features: Optional[List[str]] = None,
     genre: Optional[str] = None,
     results_folder: Optional[str] = None,
-    api_key: Optional[str] = None
+    api_key: Optional[str] = None,
+    on_progress: Optional[Callable[[Dict[str, Any]], Any]] = None,
+    poll_interval: float = 5
 ) -> Dict[str, Any]
 ```
 
@@ -207,6 +335,8 @@ audial.segment(
 | `genre` | str | No | `"Default"` | Genre of the track |
 | `results_folder` | str | No | `None` | Folder to save results (uses default if `None`) |
 | `api_key` | str | No | `None` | API key to use (uses default if `None`) |
+| `on_progress` | Callable | No | `None` | Called with the pipeline status after every poll |
+| `poll_interval` | float | No | `5` | Seconds between pipeline status polls |
 
 #### Available Features
 
@@ -226,7 +356,7 @@ audial.segment(
 #### Returns
 
 A dictionary containing:
-- `execution`: API response data
+- `execution`: The final pipeline status (steps, outputs, timings)
 - `segmentation`: Segmentation data (if available)
 - `files`: Information about downloaded files
   - `folder`: Path to the results folder
@@ -307,6 +437,13 @@ master_file = next(iter(mastered["files"]["files"].values()))
 
 Generate a sample pack from an audio file.
 
+A sample pack is built from separated stems, so this function runs the
+`sample-pack` [pipeline](#pipelines): the track is split into stems first and
+the pack is built from them, in a single API call. Tempo and key are detected
+automatically. `execution` in the result is the pipeline status, so every step
+and its timing is visible there; `audial.pipelines.run("sample-pack", ...)` is
+the same job without the downloads.
+
 #### Function Signature
 
 ```python
@@ -316,7 +453,9 @@ audial.generate_samples(
     components: Optional[List[str]] = None,
     genre: Optional[str] = None,
     results_folder: Optional[str] = None,
-    api_key: Optional[str] = None
+    api_key: Optional[str] = None,
+    on_progress: Optional[Callable[[Dict[str, Any]], Any]] = None,
+    poll_interval: float = 5
 ) -> Dict[str, Any]
 ```
 
@@ -330,6 +469,8 @@ audial.generate_samples(
 | `genre` | str | No | `"Default"` | Genre of the track |
 | `results_folder` | str | No | `None` | Folder to save results (uses default if `None`) |
 | `api_key` | str | No | `None` | API key to use (uses default if `None`) |
+| `on_progress` | Callable | No | `None` | Called with the pipeline status after every poll |
+| `poll_interval` | float | No | `5` | Seconds between pipeline status polls |
 
 #### Available Components
 
@@ -344,7 +485,7 @@ Same as [Audio Segmentation](#audio-segmentation).
 #### Returns
 
 A dictionary containing:
-- `execution`: API response data
+- `execution`: The final pipeline status (steps, outputs, timings)
 - `files`: Information about downloaded files
   - `folder`: Path to the results folder
   - `files`: Dictionary mapping filenames to local file paths
@@ -633,6 +774,52 @@ audial config --user-id your_user_id_here
 ```bash
 audial config --results-folder path/to/results/folder
 ```
+
+### Pipeline Commands
+
+Run a whole pipeline (stem split, then the sample pack or segmentation step)
+in one call, printing a line per step change.
+
+#### Sample Pack Pipeline
+
+```bash
+audial pipeline sample-pack path/to/audio.mp3
+```
+
+#### Segmentation Pipeline
+
+```bash
+audial pipeline segmentation path/to/audio.mp3
+```
+
+#### Options
+
+```bash
+audial pipeline sample-pack path/to/audio.mp3 \
+  --genre "Tech House" \
+  --components drums bass melody \
+  --bpm 128 \
+  --key "A minor"
+```
+
+| Flag | Description |
+|------|-------------|
+| `--genre` | Genre hint |
+| `--components` | Components to process, space separated |
+| `--bpm` | Override the detected tempo |
+| `--key` | Override the detected key |
+| `--no-wait` | Start the pipeline and print its id without waiting |
+| `--poll-interval` | Seconds between status polls (default 5) |
+| `--json` | Print the pipeline status as JSON instead of a summary |
+| `--api-key` | API key to use |
+
+#### JSON Output
+
+```bash
+audial pipeline segmentation path/to/audio.mp3 --json
+```
+
+Prints only the pipeline status document, for piping into other tools.
 
 ### Stem Splitting Commands
 
