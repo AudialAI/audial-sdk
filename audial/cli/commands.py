@@ -17,6 +17,8 @@ from audial.functions.stem_split import stem_split
 from audial.functions.generate_music import generate_music
 from audial.functions.sound2vital import sound2vital
 from audial.functions.text2vox import text2vox
+from audial import pipelines
+from audial.api.constants import PIPELINES
 from audial.utils.config import get_api_key, get_results_folder, set_api_key, set_results_folder, get_user_id, set_user_id
 from audial.api.exceptions import AudialError
 from audial.api import device_login
@@ -220,6 +222,36 @@ def setup_text2vox_parser(subparsers):
     parser.add_argument('--results-folder', help='Folder to save results (uses default if not specified)')
     parser.add_argument('--api-key', help='API key to use (uses default if not specified)')
     parser.set_defaults(func=text2vox_command)
+
+
+def setup_pipeline_parser(subparsers):
+    """Setup the parser for the pipeline command."""
+    parser = subparsers.add_parser(
+        'pipeline',
+        help='Run a multi-step Audial pipeline (stem split, then sample pack or segmentation) in one call'
+    )
+    parser.add_argument('name', choices=sorted(PIPELINES),
+                       help='Pipeline to run: ' + '; '.join(
+                           f"{name} ({' -> '.join(steps)})" for name, steps in sorted(PIPELINES.items())
+                       ))
+    parser.add_argument('file_path', help='Path to the audio file')
+    parser.add_argument('--genre', default=None,
+                       help='Genre hint for the analysis (default: Default)')
+    parser.add_argument('--components', nargs='+', default=None,
+                       help='Components to process, e.g. drums bass melody (sample-pack) '
+                            'or bass beat melody vocal (segmentation)')
+    parser.add_argument('--bpm', type=float, default=None,
+                       help='Override the detected tempo (BPM)')
+    parser.add_argument('--key', dest='key_string', default=None,
+                       help="Override the detected key, e.g. 'A minor'")
+    parser.add_argument('--no-wait', action='store_true',
+                       help='Start the pipeline and print its id without waiting for it')
+    parser.add_argument('--poll-interval', type=float, default=5,
+                       help='Seconds between status polls (default: 5)')
+    parser.add_argument('--json', dest='as_json', action='store_true',
+                       help='Print the pipeline status as JSON instead of a summary')
+    parser.add_argument('--api-key', help='API key to use (uses default if not specified)')
+    parser.set_defaults(func=pipeline_command)
 
 
 def setup_config_parser(subparsers):
@@ -567,6 +599,65 @@ def text2vox_command(args) -> Dict[str, Any]:
         sys.exit(1)
 
 
+def pipeline_command(args) -> Dict[str, Any]:
+    """Handle the pipeline command."""
+    try:
+        options = {
+            "components": args.components,
+            "genre": args.genre,
+            "bpm": args.bpm,
+            "keyString": args.key_string,
+        }
+        options = {k: v for k, v in options.items() if v is not None}
+
+        tracker = pipelines.StepTracker()
+
+        def on_progress(status):
+            # Step progress, one line per change; suppressed under --json so the
+            # only thing on stdout is the JSON document.
+            if args.as_json:
+                return
+            for line in tracker.changes(status):
+                print(f"  {line}")
+
+        status = pipelines.run(
+            args.name,
+            args.file_path,
+            options=options or None,
+            wait=not args.no_wait,
+            poll_interval=args.poll_interval,
+            on_progress=on_progress,
+            api_key=args.api_key,
+        )
+
+        if args.as_json:
+            print(json.dumps(status, indent=2, default=str))
+            return status
+
+        print(f"\nPipeline {status.get('pipeline', args.name)}: {status.get('state')}")
+        print(f"Pipeline ID: {status.get('pipelineId')}")
+        for step in status.get("steps") or []:
+            exe = f" (execution {step.get('exeId')})" if step.get("exeId") else ""
+            print(f"  {step.get('name')}: {step.get('state')}{exe}")
+
+        outputs = status.get("outputs") or {}
+        stems = outputs.get("stems") or {}
+        if stems:
+            print(f"\nStems: {', '.join(sorted(stems))}")
+        for key in ("samples", "segmentation"):
+            urls = outputs.get(key) or []
+            if urls:
+                print(f"\n{key.capitalize()} ({len(urls)}):")
+                for url in urls:
+                    print(f"  {url}")
+
+        return status
+
+    except AudialError as e:
+        print(f"Error: {str(e)}", file=sys.stderr)
+        sys.exit(1)
+
+
 def config_command(args) -> None:
     """Handle the config command."""
     try:
@@ -640,6 +731,7 @@ def cli():
     setup_sound2vital_parser(subparsers)
     setup_text2vox_parser(subparsers)
     setup_segment_parser(subparsers)
+    setup_pipeline_parser(subparsers)
     setup_stem_split_parser(subparsers)
     setup_config_parser(subparsers)
     setup_login_parsers(subparsers)

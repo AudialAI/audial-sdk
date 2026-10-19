@@ -74,7 +74,23 @@ def get_auth_headers(api_key: str = None) -> Dict[str, str]:
     return {
         # "Authorization": f"Bearer {api_key}",
         "x-api-key": api_key,
-        "x-user-id": user_id,  
+        "x-user-id": user_id,
         "Content-Type": "application/json",
-        "X-Request-ID": request_id
+        "X-Request-ID": request_id,
+        # Which product surface is calling, so usage can be attributed per client.
+        # A wrapper (e.g. the MCP server) sets AUDIAL_CLIENT to name itself instead.
+        "User-Agent": get_client_identifier(),
+        "x-audial-client": get_client_identifier(),
     }
+
+
+def get_client_identifier() -> str:
+    """`name/version` for this client: `audial-sdk/<version>` unless AUDIAL_CLIENT overrides it."""
+    override = (os.environ.get("AUDIAL_CLIENT") or "").strip()
+    if override:
+        return override
+    try:
+        from audial import __version__
+    except Exception:  # pragma: no cover - during partial installs
+        __version__ = "unknown"
+    return f"audial-sdk/{__version__}"
