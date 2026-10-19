@@ -26,9 +26,8 @@ def get_api_key():
 
     if not api_key:
         raise AudialAuthError(
-            "No API key available. Please set your API key using "
-            "audial.config.set_api_key() or by setting the AUDIAL_API_KEY "
-            "environment variable."
+            "Not signed in to Audial. Run `audial login` (or audial.login() in Python) to "
+            "sign in through your browser, or set the AUDIAL_API_KEY environment variable."
         )
 
     return api_key
@@ -53,18 +52,16 @@ def get_auth_headers(api_key: str = None) -> Dict[str, str]:
     # Check if API key is available
     if not api_key:
         raise AudialAuthError(
-            "No API key available. Please set your API key using "
-            "audial.config.set_api_key() or by setting the AUDIAL_API_KEY "
-            "environment variable."
+            "Not signed in to Audial. Run `audial login` (or audial.login() in Python) to "
+            "sign in through your browser, or set the AUDIAL_API_KEY environment variable."
         )
     
-    # Get user ID from configuration
-    user_id = get_user_id()
+    # The user ID that goes with this key (see audial.utils.config.get_user_id)
+    user_id = get_user_id(api_key)
     if not user_id:
         raise AudialAuthError(
-            "No user ID available. Please set your user ID using "
-            "audial.config.set_user_id() or by setting the AUDIAL_USER_ID "
-            "environment variable."
+            "No user ID available for this API key. Run `audial login` to sign in through "
+            "your browser, or set the AUDIAL_USER_ID environment variable."
         )
     
     # Generate request ID for tracking

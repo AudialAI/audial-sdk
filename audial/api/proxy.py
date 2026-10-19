@@ -154,7 +154,7 @@ class AudialProxy:
         headers = get_auth_headers(self.api_key)
         
         # Get user ID
-        user_id = get_user_id()
+        user_id = get_user_id(self.api_key)
         
         # Map function names to actual API endpoints
         endpoint_mapping = {
@@ -238,7 +238,7 @@ class AudialProxy:
             Dict[str, Any]: The created execution.
         """
         # Get user ID
-        user_id = get_user_id()
+        user_id = get_user_id(self.api_key)
         
         # According to the OpenAPI spec, this needs to be a PUT request
         url = f"{self.base_url}/db/{user_id}/execution"
@@ -294,7 +294,7 @@ class AudialProxy:
             Dict[str, Any]: The uploaded file data.
         """
         # Get user ID
-        user_id = get_user_id()
+        user_id = get_user_id(self.api_key)
         
         # Check if file exists
         if not os.path.isfile(file_path):
@@ -372,7 +372,7 @@ class AudialProxy:
                 file URL, "type": MIME type}.
         """
         # Get user ID
-        user_id = get_user_id()
+        user_id = get_user_id(self.api_key)
 
         # Check if file exists
         if not os.path.isfile(file_path):
@@ -437,7 +437,7 @@ class AudialProxy:
             Dict[str, Any]: The analysis results.
         """
         # Get user ID
-        user_id = get_user_id()
+        user_id = get_user_id(self.api_key)
         
         url = f"{self.base_url}/functions/run/primary-analysis"
         headers = get_auth_headers(self.api_key)
@@ -535,7 +535,7 @@ class AudialProxy:
             Dict[str, Any]: The stem splitting results.
         """
         # Get user ID
-        user_id = get_user_id()
+        user_id = get_user_id(self.api_key)
         
         url = f"{self.base_url}/functions/run/stem-splitter"
         headers = get_auth_headers(self.api_key)
@@ -629,7 +629,7 @@ class AudialProxy:
             Dict[str, Any]: The segmentation results.
         """
         # Get user ID
-        user_id = get_user_id()
+        user_id = get_user_id(self.api_key)
         
         # Set default values
         components = components or ["bass", "beat", "melody", "vocal"]
@@ -725,7 +725,7 @@ class AudialProxy:
             Dict[str, Any]: The mastering results.
         """
         # Get user ID
-        user_id = get_user_id()
+        user_id = get_user_id(self.api_key)
         
         request_data = {
             "userId": user_id,
@@ -762,7 +762,7 @@ class AudialProxy:
             Dict[str, Any]: The sample pack results.
         """
         # Get user ID
-        user_id = get_user_id()
+        user_id = get_user_id(self.api_key)
         
         # Create the request object
         request = {
@@ -862,7 +862,7 @@ class AudialProxy:
             Dict[str, Any]: The MIDI generation results.
         """
         # Get user ID
-        user_id = get_user_id()
+        user_id = get_user_id(self.api_key)
         
         # Add execution ID to the request if not already present
         if "exeId" not in midi_request:
@@ -983,7 +983,7 @@ class AudialProxy:
         Returns:
             dict: The API response.
         """
-        user_id = get_user_id()
+        user_id = get_user_id(self.api_key)
 
         request_data = {
             "userId": user_id,
@@ -1096,7 +1096,7 @@ class AudialProxy:
             Dict[str, Any]: The execution object (poll get_execution with
                 its "exeId" until state is "completed" or "failed").
         """
-        user_id = get_user_id()
+        user_id = get_user_id(self.api_key)
 
         request_data = {
             "userId": user_id,
@@ -1189,7 +1189,7 @@ class AudialProxy:
             Dict[str, Any]: The execution object (poll get_execution with
                 its "exeId" until state is "completed" or "failed").
         """
-        user_id = get_user_id()
+        user_id = get_user_id(self.api_key)
 
         text2vox_input: Dict[str, Any] = {"lyrics": lyrics}
         if lyrics_mode is not None:
@@ -1275,7 +1275,7 @@ class AudialProxy:
             Dict[str, Any]: The execution data.
         """
         # Get user ID
-        user_id = get_user_id()
+        user_id = get_user_id(self.api_key)
         
         url = f"{self.base_url}/db/{user_id}/execution/{exe_id}"
         headers = get_auth_headers(self.api_key)
@@ -1364,7 +1364,7 @@ class AudialProxy:
             Dict[str, List[str]]: The file URLs.
         """
         # Get user ID
-        user_id = get_user_id()
+        user_id = get_user_id(self.api_key)
         
         url = f"{self.base_url}/files/{user_id}/execution/{exe_id}/{file_type}"
         headers = get_auth_headers(self.api_key)
@@ -1440,7 +1440,7 @@ class AudialProxy:
         if not file_path and not original:
             raise AudialError("create_pipeline needs either file_path or original")
 
-        user_id = get_user_id()
+        user_id = get_user_id(self.api_key)
         url = f"{self.base_url}/pipelines"
         headers = get_auth_headers(self.api_key)
 
