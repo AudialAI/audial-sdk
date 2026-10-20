@@ -5,7 +5,7 @@ text2vox function for the Audial SDK.
 import os
 import time
 import uuid
-from typing import Optional
+from typing import Any, Callable, Dict, Optional
 
 from audial.api.proxy import AudialProxy
 from audial.api.constants import (
@@ -20,6 +20,8 @@ from audial.api.constants import (
     FILETYPE_WORD_TS,
 )
 from audial.api.exceptions import AudialError, AudialAPIError
+from audial import warmup as warmup_module
+from audial.lyrics import validate_per_note_lyrics
 from audial.utils.config import get_results_folder
 from audial.utils.file_utils import download_file
 
@@ -44,6 +46,7 @@ def text2vox(
     api_key: Optional[str] = None,
     max_wait: float = TEXT2VOX_DEFAULT_MAX_WAIT,
     poll_interval: float = TEXT2VOX_DEFAULT_POLL_INTERVAL,
+    on_progress: Optional[Callable[[Dict[str, Any]], Any]] = None,
 ) -> dict:
     """
     Synthesize a sung vocal in the timbre of a short reference voice clip,
@@ -55,7 +58,11 @@ def text2vox(
     Args:
         reference_file: Path to a short (5-10s) reference voice clip -- the
             voice to sing in.
-        lyrics: The lyrics to sing. Required.
+        lyrics: The lyrics to sing. Required. In "per_note" mode this is
+            pipe-delimited, one token per MIDI note, where `-` (or `+`, or an
+            empty token) holds the previous syllable through this note:
+            "amazing|-|-|grace|-|how|sweet|the|sound". See audial.lyrics; it
+            is validated here, before anything is uploaded.
         midi_file: Path to a MIDI file driving the melody. Required unless
             melody_audio_file is given.
         melody_audio_file: Path to override melody audio. Required unless
@@ -65,8 +72,9 @@ def text2vox(
             source stem, used by auto-align.
         lyrics_mode: "auto" (default) matches word count to the MIDI note
             count and auto-aligns via word_timestamps; "per_note" expects
-            lyrics pipe-delimited one token per note; "1to1" passes lyrics
-            straight through.
+            lyrics pipe-delimited one token per note (see `lyrics` above and
+            audial.lyrics for the grammar); "1to1" passes lyrics straight
+            through.
         reference_text: What is said in the reference clip.
         cfg_strength: Worker synthesis option; see text2vox-runpod defaults.
         nfe_steps: Worker synthesis option.
@@ -80,6 +88,10 @@ def text2vox(
         api_key: API key override.
         max_wait: Maximum seconds to wait for completion.
         poll_interval: Seconds between execution status polls.
+        on_progress: Called with the execution record after every poll.
+            Carries the API's `warmup` object when the job had to wait for a
+            worker to start; audial.warmup turns it into the sentence the
+            CLI, the website and the MCP server all show.
 
     Returns:
         dict with keys:
@@ -95,6 +107,11 @@ def text2vox(
         AudialError: If reference_file doesn't exist, lyrics is empty,
             lyrics_mode is invalid, or neither/both of midi_file and
             melody_audio_file are given.
+        AudialValidationError: If lyrics_mode is "per_note" and the lyrics
+            cannot be sung as written (`.position` is the 1-based note the
+            message is about). Raised before any upload, and raised again
+            from the API's LYRICS_INVALID response for the one rule that
+            needs the MIDI: the token count must equal the note count.
         SubscriptionRequiredError: If the account has no active Audial
             subscription (HTTP 402).
         AudialAPIError: If the job fails, times out, or the API returns an
@@ -115,6 +132,12 @@ def text2vox(
         raise AudialError(
             "text2vox requires exactly one of midi_file or melody_audio_file"
         )
+
+    # Per-note lyrics are checked before anything is uploaded: an unsingable
+    # token used to cost two uploads and an execution before the worker said
+    # so. The count-vs-notes rule needs the MIDI and stays server-side.
+    if lyrics_mode == "per_note":
+        validate_per_note_lyrics(lyrics)
 
     if midi_file and not os.path.isfile(midi_file):
         raise AudialError(f"File not found: {midi_file}")
@@ -187,6 +210,7 @@ def text2vox(
     start_time = time.time()
     consecutive_errors = 0
     exe_data = response if response.get("state") in (EXECUTION_STATE_COMPLETED, EXECUTION_STATE_FAILED) else None
+    warmup_module.notify(on_progress, response)
 
     while exe_data is None:
         elapsed = time.time() - start_time
@@ -203,6 +227,8 @@ def text2vox(
             if consecutive_errors <= 3 or consecutive_errors % 10 == 0:
                 print(f"  Polling error ({consecutive_errors}, {int(elapsed)}s elapsed), retrying...")
             continue
+
+        warmup_module.notify(on_progress, candidate)
 
         state = candidate.get("state", "")
         if state == EXECUTION_STATE_COMPLETED:

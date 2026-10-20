@@ -34,3 +34,28 @@ class SubscriptionRequiredError(AudialAPIError):
             status_code=402,
             response=response,
         )
+
+
+class AudialValidationError(AudialError):
+    """
+    Exception raised for input the SDK rejects before calling the API.
+
+    `position` locates the problem in the input the user wrote: for
+    `lyrics_mode="per_note"` it is the 1-based index of the token (and so of
+    the MIDI note) the message is about, so an editor can highlight that note.
+    It is None when the message is not about one particular token.
+
+    The API raises the same error server-side as
+    `400 {"code": "LYRICS_INVALID", "position", "message"}`; the SDK turns
+    that response back into this exception, so client-side and server-side
+    rejections are caught the same way::
+
+        try:
+            audial.text2vox(..., lyrics_mode="per_note", lyrics=lyrics)
+        except AudialValidationError as exc:
+            print(exc, exc.position)
+    """
+    def __init__(self, message, position=None):
+        self.message = message
+        self.position = position
+        super().__init__(message)

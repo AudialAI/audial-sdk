@@ -2,11 +2,18 @@
 Audial SDK: A Python package for interacting with the Audial audio processing API.
 """
 
-__version__ = "1.4.0"
+__version__ = "1.4.1"
 
 # Pipelines: multi-step jobs (audial.pipelines.run/get/cancel/list).
 # Imported before the functions below, which build on it.
 from audial import pipelines
+
+# Machine warm-up (audial.warmup, audial.status) and per-note lyrics
+# (audial.lyrics). Imported before the functions, which use both.
+from audial import lyrics
+from audial import warmup
+from audial.lyrics import text2vox_tokens
+from audial.status import status
 
 # Import and re-export public functions
 from audial.functions.stem_split import stem_split
@@ -30,11 +37,16 @@ from audial.api.exceptions import (
     AudialError,
     AudialAuthError,
     AudialAPIError,
+    AudialValidationError,
     SubscriptionRequiredError,
 )
 
 __all__ = [
     "pipelines",
+    "lyrics",
+    "warmup",
+    "status",
+    "text2vox_tokens",
     "stem_split",
     "analyze",
     "segment",
@@ -50,5 +62,6 @@ __all__ = [
     "AudialError",
     "AudialAuthError",
     "AudialAPIError",
+    "AudialValidationError",
     "SubscriptionRequiredError",
 ]

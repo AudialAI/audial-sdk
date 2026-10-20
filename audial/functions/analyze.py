@@ -2,7 +2,7 @@
 Audio analysis implementation for Audial SDK.
 """
 
-from typing import Dict, Any, Optional
+from typing import Any, Callable, Dict, Optional
 import os
 import time
 import json
@@ -10,12 +10,14 @@ import json
 from audial.api.proxy import AudialProxy
 from audial.api.constants import API_BASE_URL
 from audial.api.exceptions import AudialError
+from audial import warmup as warmup_module
 from audial.utils.config import get_api_key, get_results_folder
 
 def analyze(
     file_path: str,
     results_folder: Optional[str] = None,
-    api_key: Optional[str] = None
+    api_key: Optional[str] = None,
+    on_progress: Optional[Callable[[Dict[str, Any]], Any]] = None,
 ) -> Dict[str, Any]:
     """
     Analyze an audio file to extract metadata like BPM, key, and other characteristics.
@@ -24,7 +26,10 @@ def analyze(
         file_path (str): Path to the audio file.
         results_folder (str, optional): Folder to save results. Uses default if None.
         api_key (str, optional): API key to use. Uses default if None.
-        
+        on_progress (callable, optional): Called with the execution record
+            after every status poll. Carries the API's `warmup` object when
+            the job had to wait for a worker to start; see audial.warmup.
+
     Returns:
         Dict[str, Any]: Analysis results including BPM, key, and other metadata.
         
@@ -55,6 +60,7 @@ def analyze(
         
         print("Running primary analysis...")
         analysis_result = proxy.run_primary_analysis(exe_id, file_data["url"])
+        warmup_module.notify(on_progress, analysis_result)
         print(analysis_result)
         
         # Extract BPM and key from analysis response
@@ -108,6 +114,7 @@ def analyze(
         
         # Get the final execution data
         result = proxy.get_execution(exe_id)
+        warmup_module.notify(on_progress, result)
         
         # Extract all analysis information
         analysis_data = {

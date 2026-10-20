@@ -2,7 +2,7 @@
 Fixed stem splitting implementation with correct URL construction and polling for all stems.
 """
 
-from typing import List, Dict, Any, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 import os
 import time
 import json
@@ -16,6 +16,7 @@ from audial.api.constants import (
     API_BASE_URL
 )
 from audial.api.exceptions import AudialError, AudialAPIError
+from audial import warmup as warmup_module
 from audial.utils.config import get_api_key, get_results_folder, get_user_id
 
 def are_all_stems_complete(available_stems, requested_stems):
@@ -56,7 +57,8 @@ def stem_split(
     target_key: Optional[str] = None,
     results_folder: Optional[str] = None,
     api_key: Optional[str] = None,
-    algorithm: str = "primaudio"
+    algorithm: str = "primaudio",
+    on_progress: Optional[Callable[[Dict[str, Any]], Any]] = None,
 ) -> Dict[str, Any]:
     """
     Split an audio file into separate stems.
@@ -71,6 +73,9 @@ def stem_split(
         results_folder (str, optional): Folder to save results. Uses default if None.
         api_key (str, optional): API key to use. Uses default if None.
         algorithm (str, optional): Algorithm to use for stem separation. Defaults to "primaudio".
+        on_progress (callable, optional): Called with the execution record
+            after every status poll. Carries the API's `warmup` object when
+            the job had to wait for a worker to start; see audial.warmup.
         
     Returns:
         Dict[str, Any]: Results data including paths to downloaded files.
@@ -204,7 +209,8 @@ def stem_split(
                 
                 try:
                     execution_result = proxy.get_execution(new_exe_id)
-                    
+                    warmup_module.notify(on_progress, execution_result)
+
                     state = execution_result.get("state")
                     
                     # Check if execution has stem data

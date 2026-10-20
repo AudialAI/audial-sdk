@@ -12,7 +12,12 @@ from unittest import mock
 import pytest
 
 from audial.api.constants import get_api_base_url
-from audial.api.exceptions import AudialAPIError, AudialError, SubscriptionRequiredError
+from audial.api.exceptions import (
+    AudialAPIError,
+    AudialError,
+    AudialValidationError,
+    SubscriptionRequiredError,
+)
 from audial.api.proxy import AudialProxy
 from audial.functions.text2vox import text2vox
 
@@ -72,6 +77,112 @@ def test_missing_reference_file_raises(midi_file, tmp_path):
                 results_folder=str(tmp_path),
             )
     mock_upload.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Per-note lyrics: rejected before anything is uploaded
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "lyrics,message,position",
+    [
+        ("-|grace", "note 1 has no syllable; the first note needs one", 1),
+        ("+|grace", "note 1 has no syllable; the first note needs one", 1),
+        ("|grace", "note 1 has no syllable; the first note needs one", 1),
+        ("   ", 'no syllables provided', 1),
+    ],
+)
+def test_per_note_lyrics_are_rejected_before_any_upload(
+    audio_file, midi_file, tmp_path, lyrics, message, position
+):
+    # The whole proxy is replaced: if text2vox reached the network at all it
+    # would have to construct one, and the assertion below would fail. This is
+    # the regression the error exists for -- a bad token used to cost two
+    # uploads and an execution before the worker rejected it.
+    with mock.patch("audial.functions.text2vox.AudialProxy") as mock_proxy:
+        with pytest.raises(AudialValidationError) as excinfo:
+            text2vox(
+                reference_file=audio_file,
+                lyrics=lyrics,
+                midi_file=midi_file,
+                lyrics_mode="per_note",
+                results_folder=str(tmp_path),
+            )
+
+    assert str(excinfo.value) == message
+    assert excinfo.value.position == position
+    mock_proxy.assert_not_called()
+    mock_proxy.return_value.upload_execution_file.assert_not_called()
+    mock_proxy.return_value.run_text2vox.assert_not_called()
+
+
+def test_valid_per_note_lyrics_are_sent_through(audio_file, midi_file, tmp_path):
+    """A hold is ordinary input: validation lets "amazing|-|-|grace" past."""
+    with mock.patch(
+        "audial.functions.text2vox.AudialProxy.upload_execution_file",
+        return_value={"filename": "voice.wav", "url": "https://storage.example/voice.wav"},
+    ), mock.patch(
+        "audial.functions.text2vox.AudialProxy.run_text2vox",
+        return_value=_completed_execution(),
+    ) as mock_run, mock.patch(
+        "audial.functions.text2vox.download_file", return_value=None
+    ):
+        text2vox(
+            reference_file=audio_file,
+            lyrics="amazing|-|-|grace|-|how|sweet|the|sound",
+            midi_file=midi_file,
+            lyrics_mode="per_note",
+            results_folder=str(tmp_path),
+        )
+
+    assert mock_run.call_args.kwargs["lyrics"] == "amazing|-|-|grace|-|how|sweet|the|sound"
+    assert mock_run.call_args.kwargs["lyrics_mode"] == "per_note"
+
+
+def test_other_lyrics_modes_are_not_token_checked(audio_file, midi_file, tmp_path):
+    """"auto" and "1to1" take prose; a leading dash there is just a dash."""
+    with mock.patch(
+        "audial.functions.text2vox.AudialProxy.upload_execution_file",
+        return_value={"filename": "voice.wav", "url": "https://storage.example/voice.wav"},
+    ), mock.patch(
+        "audial.functions.text2vox.AudialProxy.run_text2vox",
+        return_value=_completed_execution(),
+    ), mock.patch("audial.functions.text2vox.download_file", return_value=None):
+        text2vox(
+            reference_file=audio_file,
+            lyrics="- not a token list",
+            midi_file=midi_file,
+            lyrics_mode="auto",
+            results_folder=str(tmp_path),
+        )
+
+
+def test_api_lyrics_invalid_response_raises_the_same_error(fake_response):
+    """The one rule that needs the MIDI is the API's; it comes back the same way."""
+    proxy = AudialProxy()
+    proxy.session.post = mock.MagicMock(
+        return_value=fake_response(
+            400,
+            {
+                "code": "LYRICS_INVALID",
+                "position": 10,
+                "message": "9 tokens for 10 notes; the first unmatched note starts at 2.4 s",
+            },
+        )
+    )
+
+    with pytest.raises(AudialValidationError) as excinfo:
+        proxy.run_text2vox(
+            original_file={"filename": "voice.wav", "url": "https://storage.example/voice.wav"},
+            lyrics="a|ma|zing|grace|-|how|sweet|the|sound",
+            lyrics_mode="per_note",
+            midi_file={"filename": "song.mid", "url": "https://storage.example/song.mid"},
+        )
+
+    assert str(excinfo.value) == (
+        "9 tokens for 10 notes; the first unmatched note starts at 2.4 s"
+    )
+    assert excinfo.value.position == 10
 
 
 # ---------------------------------------------------------------------------

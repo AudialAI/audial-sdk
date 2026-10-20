@@ -18,7 +18,9 @@ from audial.functions.generate_music import generate_music
 from audial.functions.sound2vital import sound2vital
 from audial.functions.text2vox import text2vox
 from audial import pipelines
-from audial.api.constants import PIPELINES
+from audial import warmup
+from audial.status import status as functions_status
+from audial.api.constants import PIPELINES, STATUS_FUNCTIONS
 from audial.utils.config import get_api_key, get_results_folder, set_api_key, set_results_folder, get_user_id, set_user_id
 from audial.api.exceptions import AudialError
 from audial.api import device_login
@@ -201,7 +203,11 @@ def setup_text2vox_parser(subparsers):
         help='Synthesize a sung vocal in the timbre of a reference voice clip, following a melody and lyrics'
     )
     parser.add_argument('reference_file', help='Path to a short (5-10s) reference voice clip')
-    parser.add_argument('lyrics', help='Lyrics to sing')
+    parser.add_argument('lyrics',
+                       help='Lyrics to sing. With --lyrics-mode per_note: one token per MIDI '
+                            'note, pipe-delimited, where "-" (or "+", or an empty token) holds '
+                            'the previous syllable through that note, e.g. '
+                            '"amazing|-|-|grace|-|how|sweet|the|sound"')
     parser.add_argument('--midi', dest='midi_file', default=None,
                        help='Path to a MIDI file driving the melody (required unless --melody-audio is given)')
     parser.add_argument('--melody-audio', dest='melody_audio_file', default=None,
@@ -209,7 +215,8 @@ def setup_text2vox_parser(subparsers):
     parser.add_argument('--word-timestamps', dest='word_timestamps_file', default=None,
                        help='Path to a Whisper word-timestamps JSON, used by auto-align')
     parser.add_argument('--lyrics-mode', default='auto', choices=['auto', 'per_note', '1to1'],
-                       help='Lyrics alignment mode (default: auto)')
+                       help='Lyrics alignment mode (default: auto). per_note takes one token '
+                            'per MIDI note; see the lyrics argument for the hold grammar')
     parser.add_argument('--reference-text', default=None, help='What is said in the reference clip')
     parser.add_argument('--cfg-strength', type=float, default=None, help='Worker synthesis option')
     parser.add_argument('--nfe-steps', type=int, default=None, help='Worker synthesis option')
@@ -252,6 +259,23 @@ def setup_pipeline_parser(subparsers):
                        help='Print the pipeline status as JSON instead of a summary')
     parser.add_argument('--api-key', help='API key to use (uses default if not specified)')
     parser.set_defaults(func=pipeline_command)
+
+
+def setup_status_parser(subparsers):
+    """Setup the parser for the status command."""
+    parser = subparsers.add_parser(
+        'status',
+        help='Show which Audial functions have a worker awake right now'
+    )
+    parser.add_argument(
+        '--function',
+        choices=sorted(STATUS_FUNCTIONS),
+        help='Only report this function (default: all of them)'
+    )
+    parser.add_argument('--json', dest='as_json', action='store_true',
+                        help='Print the raw /functions/status document')
+    parser.add_argument('--api-key', help='API key to use')
+    parser.set_defaults(func=status_command)
 
 
 def setup_config_parser(subparsers):
@@ -339,6 +363,51 @@ def whoami_command(args) -> None:
     print(f"User ID: {account.get('user_id') or 'Not set'}")
     print(f"Credentials from: {source}")
 
+def warmup_reporter(function: str, args) -> warmup.WarmupReporter:
+    """
+    Warm-up output for one command: a pre-flight check, then live changes.
+
+    Audial's workers scale to zero, so the first job after an idle period
+    waits for a GPU to start. `GET /functions/status` says whether that is
+    about to happen *before* the job is submitted, which is the only way to
+    explain the wait to someone watching a terminal; after that the execution
+    itself reports each phase and the reporter prints what changed.
+
+    The returned object is the `on_progress` callback to hand to the SDK.
+    """
+    reporter = warmup.WarmupReporter()
+    reporter.preflight(function, api_key=getattr(args, "api_key", None))
+    return reporter
+
+
+def status_command(args) -> Dict[str, Any]:
+    """Handle the status command."""
+    try:
+        doc = functions_status(args.function, api_key=args.api_key)
+        if getattr(args, "as_json", False):
+            print(json.dumps(doc, indent=2, default=str))
+            return doc
+
+        items = [item for item in (doc.get("items") or []) if isinstance(item, dict)]
+        if not items:
+            print("No function status reported.")
+            return doc
+
+        print("\nService status:")
+        for item in items:
+            warm = item.get("warm")
+            label = "ready" if warm else ("warming up" if warm is False else "unknown")
+            queued = item.get("queued")
+            queued_text = f", {queued} queued" if isinstance(queued, int) and queued else ""
+            print(f"  {item.get('function')}: {label}{queued_text}")
+            if warm is False:
+                print(f"    {warmup.cold_start_message(item.get('expectedColdStartMs'))}")
+        return doc
+
+    except AudialError as e:
+        print(f"Error: {str(e)}", file=sys.stderr)
+        sys.exit(1)
+
 
 def analyze_command(args) -> Dict[str, Any]:
     """Handle the analyze command."""
@@ -346,7 +415,8 @@ def analyze_command(args) -> Dict[str, Any]:
         result = analyze(
             file_path=args.file_path,
             results_folder=args.results_folder,
-            api_key=args.api_key
+            api_key=args.api_key,
+            on_progress=warmup_reporter("analyze", args),
         )
         
         # Print a summary of the results
@@ -374,7 +444,8 @@ def master_command(args) -> Dict[str, Any]:
             file_path=args.file_path,
             reference_file=args.reference_file,
             results_folder=args.results_folder,
-            api_key=args.api_key
+            api_key=args.api_key,
+            on_progress=warmup_reporter("master", args),
         )
         
         # Print a summary of the results
@@ -401,7 +472,8 @@ def generate_midi_command(args) -> Dict[str, Any]:
             file_path=args.file_paths,
             bpm=args.bpm,
             results_folder=args.results_folder,
-            api_key=args.api_key
+            api_key=args.api_key,
+            on_progress=warmup_reporter("generate_midi", args),
         )
         
         # Print a summary of the results
@@ -426,7 +498,8 @@ def generate_samples_command(args) -> Dict[str, Any]:
             components=args.components,
             genre=args.genre,
             results_folder=args.results_folder,
-            api_key=args.api_key
+            api_key=args.api_key,
+            on_progress=warmup_reporter("generate_samples", args),
         )
         
         # Print a summary of the results
@@ -455,7 +528,8 @@ def segment_command(args) -> Dict[str, Any]:
             features=args.features,
             genre=args.genre,
             results_folder=args.results_folder,
-            api_key=args.api_key
+            api_key=args.api_key,
+            on_progress=warmup_reporter("segment", args),
         )
         
         # Print a summary of the results
@@ -481,7 +555,8 @@ def stem_split_command(args) -> Dict[str, Any]:
             target_key=args.target_key,
             results_folder=args.results_folder,
             api_key=args.api_key,
-            algorithm=args.algorithm
+            algorithm=args.algorithm,
+            on_progress=warmup_reporter("stem_split", args),
         )
         
         # Print a summary of the results
@@ -522,6 +597,7 @@ def generate_music_command(args) -> Dict[str, Any]:
             negative_prompt=args.negative_prompt,
             results_folder=args.results_folder,
             api_key=args.api_key,
+            on_progress=warmup_reporter("generate_music", args),
         )
 
         if args.task_type == "understand":
@@ -548,6 +624,7 @@ def sound2vital_command(args) -> Dict[str, Any]:
             file_path=args.file_path,
             results_folder=args.results_folder,
             api_key=args.api_key,
+            on_progress=warmup_reporter("sound2vital", args),
         )
 
         print("\nsound2vital Results:")
@@ -586,6 +663,7 @@ def text2vox_command(args) -> Dict[str, Any]:
             seed=args.seed,
             results_folder=args.results_folder,
             api_key=args.api_key,
+            on_progress=warmup_reporter("text2vox", args),
         )
 
         print("\ntext2vox Results:")
@@ -611,6 +689,13 @@ def pipeline_command(args) -> Dict[str, Any]:
         options = {k: v for k, v in options.items() if v is not None}
 
         tracker = pipelines.StepTracker()
+        # A pipeline's steps run on the same workers as the functions they
+        # wrap, so a pipeline waits on a cold start too; the warm-up phase
+        # arrives on steps[].warmup and is reported the same way everywhere.
+        reporter = None
+        if not args.as_json:
+            reporter = warmup.WarmupReporter(printer=lambda line: print(f"  {line}"))
+            reporter.preflight(PIPELINES[args.name][0], api_key=args.api_key)
 
         def on_progress(status):
             # Step progress, one line per change; suppressed under --json so the
@@ -619,6 +704,7 @@ def pipeline_command(args) -> Dict[str, Any]:
                 return
             for line in tracker.changes(status):
                 print(f"  {line}")
+            reporter(status)
 
         status = pipelines.run(
             args.name,
@@ -733,6 +819,7 @@ def cli():
     setup_segment_parser(subparsers)
     setup_pipeline_parser(subparsers)
     setup_stem_split_parser(subparsers)
+    setup_status_parser(subparsers)
     setup_config_parser(subparsers)
     setup_login_parsers(subparsers)
     
