@@ -4,7 +4,7 @@ Music generation function for the Audial SDK.
 
 import os
 import time
-from typing import Optional, List
+from typing import Any, Callable, Dict, Optional, List
 
 from audial.api.proxy import AudialProxy
 from audial.api.constants import (
@@ -18,6 +18,7 @@ from audial.api.constants import (
     DEFAULT_VOCAL_LANGUAGE,
 )
 from audial.api.exceptions import AudialError, AudialAPIError
+from audial import warmup as warmup_module
 from audial.utils.config import get_results_folder
 from audial.utils.file_utils import download_file
 
@@ -49,6 +50,7 @@ def generate_music(
     api_key: str = None,
     max_wait: float = 900,
     poll_interval: float = 5,
+    on_progress: Optional[Callable[[Dict[str, Any]], Any]] = None,
 ) -> dict:
     """
     Generate music with the Audial music model.
@@ -83,6 +85,9 @@ def generate_music(
         max_wait: Seconds to wait for the job before raising AudialAPIError. Default 900
             (cold-started workers can take several minutes).
         poll_interval: Seconds between status checks. Default 5.
+        on_progress: Called with the execution record after every poll.
+            Carries the API's `warmup` object when the job had to wait for a
+            worker to start; see audial.warmup.
 
     Returns:
         dict with keys:
@@ -163,6 +168,7 @@ def generate_music(
 
     # Step 3: Poll for completion
     print("Waiting for generation to complete...")
+    warmup_module.notify(on_progress, response)
     start_time = time.time()
     consecutive_errors = 0
 
@@ -181,6 +187,8 @@ def generate_music(
             if consecutive_errors <= 3 or consecutive_errors % 10 == 0:
                 print(f"  Polling error ({consecutive_errors}, {int(elapsed)}s elapsed), retrying...")
             continue
+
+        warmup_module.notify(on_progress, exe_data)
 
         state = exe_data.get("state", "")
 

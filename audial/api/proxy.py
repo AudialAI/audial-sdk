@@ -18,6 +18,7 @@ from audial.api.constants import (
     DEFAULT_POLLING_INTERVAL,
     MAX_RETRIES,
     REQUEST_TIMEOUT,
+    STATUS_FUNCTIONS,
     get_api_base_url,
 )
 from audial.api.auth import get_auth_headers
@@ -25,6 +26,7 @@ from audial.api.exceptions import (
     AudialAPIError,
     AudialAuthError,
     AudialError,
+    AudialValidationError,
     SubscriptionRequiredError,
 )
 from audial.utils.file_utils import get_mime_type, sanitize_filename
@@ -76,7 +78,8 @@ def _pipeline_option_fields(options: Optional[Dict[str, Any]]) -> List[Tuple[str
 
 def _pipeline_response(response: "requests.Response", context: str) -> Dict[str, Any]:
     """
-    Turn a /pipelines response into its JSON body, or raise.
+    Turn a JSON API response into its body, or raise. Used by /pipelines and
+    /functions/status -- the endpoints whose error bodies are uniform.
 
     The API's error bodies carry a machine-readable `code` (INVALID_PIPELINE,
     PIPELINE_NOT_FOUND, STEMS_REQUIRED, SUBSCRIPTION_REQUIRED, ...); it is kept
@@ -1249,12 +1252,25 @@ class AudialProxy:
 
             if response.status_code >= 400:
                 error_message = f"API error: {response.status_code}"
+                error_data = None
                 try:
                     error_data = response.json()
-                    if isinstance(error_data, dict) and "error" in error_data:
-                        error_message = f"API error: {error_data['error']}"
-                except (ValueError, KeyError):
+                except ValueError:
                     pass
+                if isinstance(error_data, dict):
+                    # The API rejects unsingable lyrics before it does any
+                    # work: 400 {code: LYRICS_INVALID, position, message}.
+                    # Re-raise it as the same exception the SDK's own
+                    # pre-upload check raises, so a caller handles one type
+                    # and gets the position either way.
+                    if error_data.get("code") == "LYRICS_INVALID":
+                        raise AudialValidationError(
+                            error_data.get("message") or "the lyrics cannot be sung as written",
+                            position=error_data.get("position"),
+                        )
+                    detail = error_data.get("error") or error_data.get("message")
+                    if detail:
+                        error_message = f"API error: {detail}"
                 raise AudialAPIError(error_message)
 
             return response.json()
@@ -1352,6 +1368,45 @@ class AudialProxy:
             # Wait before next poll
             time.sleep(polling_interval)
     
+    def get_functions_status(self, function: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Which functions have a worker awake: GET /functions/status.
+
+        Cached by the API and free of rate-limit cost, so a client can call it
+        before every submission to find out whether this job is about to pay
+        a cold start.
+
+        Args:
+            function (str, optional): Limit the answer to one function.
+                Accepts an SDK name ("text2vox", "generate_samples") or the
+                API's own name ("sample-pack"); SDK names are translated.
+
+        Returns:
+            Dict[str, Any]: {"items": [{"function", "warm", "queued",
+                "expectedColdStartMs"?, "expectedRunMs"?}, ...]}
+
+        Raises:
+            AudialAuthError: If the credentials are rejected.
+            AudialAPIError: For any other error, or a non-JSON response.
+        """
+        url = f"{self.base_url}/functions/status"
+        headers = get_auth_headers(self.api_key)
+        params = None
+        if function:
+            params = {"function": STATUS_FUNCTIONS.get(function, function)}
+
+        try:
+            response = self.session.get(
+                url,
+                headers=headers,
+                params=params,
+                timeout=REQUEST_TIMEOUT,
+            )
+        except requests.exceptions.RequestException as e:
+            raise AudialAPIError(f"Failed to get function status: {str(e)}")
+
+        return _pipeline_response(response, "Failed to get function status")
+
     def get_execution_files_by_type(self, exe_id: str, file_type: str) -> Dict[str, List[str]]:
         """
         Get files from an execution by type.

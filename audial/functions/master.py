@@ -2,7 +2,7 @@
 Audio mastering implementation for Audial SDK.
 """
 
-from typing import Dict, Any, Optional
+from typing import Any, Callable, Dict, Optional
 import os
 import time
 import json
@@ -15,6 +15,7 @@ import requests
 from audial.api.proxy import AudialProxy
 from audial.api.constants import API_BASE_URL
 from audial.api.exceptions import AudialError
+from audial import warmup as warmup_module
 from audial.utils.config import get_api_key, get_results_folder, get_user_id
 
 
@@ -22,7 +23,8 @@ def master(
     file_path: str,
     reference_file: Optional[str] = None,
     results_folder: Optional[str] = None,
-    api_key: Optional[str] = None
+    api_key: Optional[str] = None,
+    on_progress: Optional[Callable[[Dict[str, Any]], Any]] = None,
 ) -> Dict[str, Any]:
     """
     Apply professional mastering to an audio file.
@@ -32,7 +34,10 @@ def master(
         reference_file (str, optional): Path to a reference file to match sound characteristics.
         results_folder (str, optional): Folder to save results. Uses default if None.
         api_key (str, optional): API key to use. Uses default if None.
-        
+        on_progress (callable, optional): Called with the execution record
+            after every status poll. Carries the API's `warmup` object when
+            the job had to wait for a worker to start; see audial.warmup.
+
     Returns:
         Dict[str, Any]: Results data including paths to downloaded files.
         
@@ -162,7 +167,8 @@ def master(
                 try:
                     print(f"Checking execution status (attempt {attempt+1}/{max_retries})...")
                     result = proxy.get_execution(new_exe_id)
-                    
+                    warmup_module.notify(on_progress, result)
+
                     state = result.get("state")
                     print(f"Current state: {state}")
                     

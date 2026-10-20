@@ -125,6 +125,31 @@ TEXT2VOX_LYRICS_MODES = ["auto", "per_note", "1to1"]
 TEXT2VOX_DEFAULT_MAX_WAIT = 360
 TEXT2VOX_DEFAULT_POLL_INTERVAL = 5
 
+# ---------------------------------------------------------------------------
+# Machine warm-up (GET /functions/status, and the `warmup` object the API
+# writes onto executions and pipeline steps).
+# ---------------------------------------------------------------------------
+
+# SDK function name -> the `function` key GET /functions/status reports it
+# under. `audial.status()` accepts either spelling and normalises with this.
+STATUS_FUNCTIONS = {
+    "stem_split": FUNCTION_STEM_SPLITTER,
+    "analyze": FUNCTION_PRIMARY_ANALYSIS,
+    "segment": FUNCTION_SEGMENTATION,
+    "master": FUNCTION_MASTERING,
+    "generate_samples": FUNCTION_SAMPLE_PACK,
+    "generate_midi": FUNCTION_GENERATE_MIDI,
+    "generate_music": FUNCTION_MUSIC_GENERATOR,
+    "sound2vital": FUNCTION_SOUND2VITAL,
+    "text2vox": FUNCTION_TEXT2VOX,
+}
+
+# Warm-up phases written onto an execution / pipeline step.
+WARMUP_STATE_COLD = "cold"
+WARMUP_STATE_INITIALIZING = "initializing"
+WARMUP_STATE_WORKING = "working"
+WARMUP_STATE_DONE = "done"
+
 # Execution-scoped upload filetypes (PUT /files/{userId}/execution/{exeId}/{filetype}/{filename})
 FILETYPE_REFERENCE = "reference"
 FILETYPE_MIDI = "midi"

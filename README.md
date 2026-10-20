@@ -414,6 +414,76 @@ result = audial.text2vox(
 )
 ```
 
+#### Per-note lyrics
+
+`lyrics_mode="per_note"` gives you a syllable per MIDI note: the lyrics are pipe-delimited,
+one token per note, and a **hold** keeps the previous syllable going through the next note.
+
+| Token | Meaning |
+|-------|---------|
+| `grace` | Sung on this note |
+| `-` | Hold: continue the previous syllable through this note (the documented form) |
+| `+` | Hold as well (a Synthesizer V habit) |
+| *empty* | Hold as well -- what a double pipe produces |
+
+So a word can span notes:
+
+```python
+result = audial.text2vox(
+    reference_file="voice_clip.wav",
+    midi_file="melody.mid",                              # 9 notes
+    lyrics="amazing|-|-|grace|-|how|sweet|the|sound",    # 9 tokens
+    lyrics_mode="per_note",
+)
+```
+
+"amazing" is sung across notes 1-3 and "grace" across notes 4-5. There is no rest token: a
+note that should be silent should not be in the MIDI. The token count must equal the note
+count, and the first token must be a syllable -- which the SDK checks before it uploads
+anything:
+
+```python
+from audial.api.exceptions import AudialValidationError
+
+try:
+    audial.text2vox(..., lyrics="-|grace", lyrics_mode="per_note")
+except AudialValidationError as e:
+    print(e)           # note 1 has no syllable; the first note needs one
+    print(e.position)  # 1 -- the note the message is about
+
+audial.text2vox_tokens("amazing|-|-|grace")  # the tokens that will be sent
+```
+
+See [Per-note lyrics](API_DOCUMENTATION.md#per-note-lyrics) for the full reference.
+
+### Cold Starts
+
+Audial's GPU workers scale to zero, so the first job after an idle period waits a few
+minutes for a worker to start and load the model; every run after it is fast. The API
+reports that phase on the execution it already returns, so the SDK can explain the wait
+instead of looking hung.
+
+Every function that polls takes an optional `on_progress` callback, and `audial.status()`
+answers the same question *before* a job is submitted:
+
+```python
+tracker = audial.warmup.WarmupTracker()
+audial.sound2vital("kick.wav", on_progress=lambda status: [
+    print(line) for line in tracker.changes(status)
+])
+# Warming up the machine - the first request takes a few minutes longer than
+# usual (about 3 min); every run after this is faster
+# Working on your job...
+
+audial.status("text2vox")
+# {'items': [{'function': 'text2vox', 'warm': False, 'queued': 0,
+#             'expectedColdStartMs': 180000, 'expectedRunMs': 42000}]}
+```
+
+The CLI does both for you: it checks before it submits and prints each phase as it
+changes. `audial status` shows every function at once. See [Cold Starts and Service
+Status](API_DOCUMENTATION.md#cold-starts-and-service-status).
+
 ## Command Line Interface
 
 The SDK provides a powerful command-line interface:
@@ -446,6 +516,11 @@ audial sound2vital clip.wav
 
 # Text-to-vocal synthesis
 audial text2vox voice_clip.wav "la la la la" --midi melody.mid
+audial text2vox voice_clip.wav "amazing|-|-|grace|-|how|sweet|the|sound" \
+  --midi melody.mid --lyrics-mode per_note
+
+# Which services have a worker awake right now
+audial status
 
 # Configuration
 audial config --api-key your_api_key_here
@@ -484,11 +559,14 @@ from audial.api.exceptions import (
     AudialError,
     AudialAuthError,
     AudialAPIError,
+    AudialValidationError,
     SubscriptionRequiredError,
 )
 
 try:
     result = audial.stem_split("path/to/audio.mp3")
+except AudialValidationError as e:
+    print(f"Unusable input: {e} (position {e.position})")
 except SubscriptionRequiredError as e:
     print(f"Subscription required: {e}")
 except AudialAuthError as e:

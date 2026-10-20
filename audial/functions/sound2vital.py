@@ -5,7 +5,7 @@ sound2vital function for the Audial SDK.
 import os
 import time
 import uuid
-from typing import Optional
+from typing import Any, Callable, Dict, Optional
 
 from audial.api.proxy import AudialProxy
 from audial.api.constants import (
@@ -16,6 +16,7 @@ from audial.api.constants import (
     FILETYPE_REFERENCE,
 )
 from audial.api.exceptions import AudialError, AudialAPIError
+from audial import warmup as warmup_module
 from audial.utils.config import get_results_folder
 from audial.utils.file_utils import download_file
 
@@ -26,6 +27,7 @@ def sound2vital(
     api_key: Optional[str] = None,
     max_wait: float = SOUND2VITAL_DEFAULT_MAX_WAIT,
     poll_interval: float = SOUND2VITAL_DEFAULT_POLL_INTERVAL,
+    on_progress: Optional[Callable[[Dict[str, Any]], Any]] = None,
 ) -> dict:
     """
     Synthesize a Vital synth preset that reproduces the timbre of a short
@@ -39,6 +41,9 @@ def sound2vital(
         max_wait: Maximum seconds to wait for completion. Jobs typically
             take 60-250s; default leaves headroom above that.
         poll_interval: Seconds between execution status polls.
+        on_progress: Called with the execution record after every poll.
+            Carries the API's `warmup` object when the job had to wait for a
+            worker to start; see audial.warmup.
 
     Returns:
         dict with keys:
@@ -92,6 +97,7 @@ def sound2vital(
     start_time = time.time()
     consecutive_errors = 0
     exe_data = response if response.get("state") in (EXECUTION_STATE_COMPLETED, EXECUTION_STATE_FAILED) else None
+    warmup_module.notify(on_progress, response)
 
     while exe_data is None:
         elapsed = time.time() - start_time
@@ -108,6 +114,8 @@ def sound2vital(
             if consecutive_errors <= 3 or consecutive_errors % 10 == 0:
                 print(f"  Polling error ({consecutive_errors}, {int(elapsed)}s elapsed), retrying...")
             continue
+
+        warmup_module.notify(on_progress, candidate)
 
         state = candidate.get("state", "")
         if state == EXECUTION_STATE_COMPLETED:

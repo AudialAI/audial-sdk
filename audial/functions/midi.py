@@ -2,7 +2,7 @@
 MIDI generation implementation for Audial SDK.
 """
 
-from typing import Dict, Any, Optional, List, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 import os
 import time
 import json
@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from audial.api.proxy import AudialProxy
 from audial.api.constants import API_BASE_URL
 from audial.api.exceptions import AudialError, AudialAPIError
+from audial import warmup as warmup_module
 from audial.utils.config import get_api_key, get_results_folder, get_user_id
 
 def generate_midi(
@@ -22,7 +23,8 @@ def generate_midi(
     bpm: Optional[float] = None,
     results_folder: Optional[str] = None,
     api_key: Optional[str] = None,
-    max_wait: float = 900
+    max_wait: float = 900,
+    on_progress: Optional[Callable[[Dict[str, Any]], Any]] = None,
 ) -> Dict[str, Any]:
     """
     Generate MIDI data from one or more audio files.
@@ -34,6 +36,9 @@ def generate_midi(
         api_key (str, optional): API key to use. Uses default if None.
         max_wait: Seconds to wait for the job before raising AudialAPIError. Default 900
             (cold-started workers can take several minutes).
+        on_progress (callable, optional): Called with the execution record
+            after every status poll. Carries the API's `warmup` object when
+            the job had to wait for a worker to start; see audial.warmup.
 
     Returns:
         Dict[str, Any]: Results data including paths to downloaded files.
@@ -166,6 +171,7 @@ def generate_midi(
                 try:
                     # Check general execution status
                     exec_data = proxy.get_execution(exe_id)
+                    warmup_module.notify(on_progress, exec_data)
                     
                     # Check for MIDI data in main execution response
                     if has_midi_data(exec_data):

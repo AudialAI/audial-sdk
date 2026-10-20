@@ -15,6 +15,8 @@ This document provides comprehensive documentation for the Audial SDK, including
   - [MIDI Generation](#midi-generation)
   - [Sound-to-Vital Resynthesis (sound2vital)](#sound-to-vital-resynthesis-sound2vital)
   - [Text-to-Vocal Synthesis (text2vox)](#text-to-vocal-synthesis-text2vox)
+    - [Per-note lyrics](#per-note-lyrics)
+  - [Cold Starts and Service Status](#cold-starts-and-service-status)
   - [Error Handling](#error-handling)
 - [Command Line Interface](#command-line-interface)
   - [Configuration Commands](#configuration-commands)
@@ -27,6 +29,7 @@ This document provides comprehensive documentation for the Audial SDK, including
   - [MIDI Generation Commands](#midi-generation-commands)
   - [sound2vital Commands](#sound2vital-commands)
   - [text2vox Commands](#text2vox-commands)
+  - [Service Status Command](#service-status-command)
 - [Result Data Structure](#result-data-structure)
 
 ## Python API
@@ -579,7 +582,8 @@ audial.sound2vital(
     results_folder: Optional[str] = None,
     api_key: Optional[str] = None,
     max_wait: float = 360,
-    poll_interval: float = 5
+    poll_interval: float = 5,
+    on_progress: Optional[Callable[[Dict[str, Any]], Any]] = None
 ) -> Dict[str, Any]
 ```
 
@@ -592,6 +596,7 @@ audial.sound2vital(
 | `api_key` | str | No | `None` | API key to use (uses default if `None`) |
 | `max_wait` | float | No | `360` | Maximum seconds to wait for completion (jobs typically take 60-250s) |
 | `poll_interval` | float | No | `5` | Seconds between execution status polls |
+| `on_progress` | callable | No | `None` | Called with the execution record after every poll -- see [Cold Starts and Service Status](#cold-starts-and-service-status) |
 
 #### Returns
 
@@ -649,7 +654,8 @@ audial.text2vox(
     results_folder: Optional[str] = None,
     api_key: Optional[str] = None,
     max_wait: float = 360,
-    poll_interval: float = 5
+    poll_interval: float = 5,
+    on_progress: Optional[Callable[[Dict[str, Any]], Any]] = None
 ) -> Dict[str, Any]
 ```
 
@@ -658,11 +664,11 @@ audial.text2vox(
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `reference_file` | str | Yes | - | Path to a short (5-10s) reference voice clip -- the voice to sing in |
-| `lyrics` | str | Yes | - | The lyrics to sing |
+| `lyrics` | str | Yes | - | The lyrics to sing. In `per_note` mode this is pipe-delimited, one token per MIDI note -- see [Per-note lyrics](#per-note-lyrics) |
 | `midi_file` | str | One of midi_file/melody_audio_file | `None` | Path to a MIDI file driving the melody |
 | `melody_audio_file` | str | One of midi_file/melody_audio_file | `None` | Path to override melody audio (skips strict-pitch synthesis) |
 | `word_timestamps_file` | str | No | `None` | Path to a Whisper word-timestamps JSON, used by auto-align |
-| `lyrics_mode` | str | No | `"auto"` | `"auto"` (word count matches MIDI notes, auto-aligns via word_timestamps), `"per_note"` (pipe-delimited, one token per note), or `"1to1"` (passed straight through) |
+| `lyrics_mode` | str | No | `"auto"` | `"auto"` (word count matches MIDI notes, auto-aligns via word_timestamps), `"per_note"` (pipe-delimited, one token per note -- see [Per-note lyrics](#per-note-lyrics)), or `"1to1"` (passed straight through) |
 | `reference_text` | str | No | `None` | What is said in the reference clip |
 | `cfg_strength` | float | No | `None` | Worker synthesis option |
 | `nfe_steps` | int | No | `None` | Worker synthesis option |
@@ -676,6 +682,7 @@ audial.text2vox(
 | `api_key` | str | No | `None` | API key to use (uses default if `None`) |
 | `max_wait` | float | No | `360` | Maximum seconds to wait for completion |
 | `poll_interval` | float | No | `5` | Seconds between execution status polls |
+| `on_progress` | callable | No | `None` | Called with the execution record after every poll -- see [Cold Starts and Service Status](#cold-starts-and-service-status) |
 
 #### Returns
 
@@ -712,6 +719,137 @@ for name, path in result["files"]["files"].items():
     print(f"{name}: {path}")
 ```
 
+#### Per-note lyrics
+
+`lyrics_mode="per_note"` gives you a syllable per MIDI note. The lyrics are pipe-delimited,
+one token per note, and there is exactly one concept beyond "a syllable on a note": a
+**hold**, which means "keep singing the previous syllable through this note".
+
+| Token | Meaning |
+|-------|---------|
+| `grace` | Sung on this note |
+| `-` | Hold: continue the previous syllable through this note (the documented form) |
+| `+` | Hold as well (a Synthesizer V habit) |
+| *empty* | Hold as well -- what a double pipe `a\|\|b` produces |
+
+A token may be a whole word spread over several notes:
+
+```python
+import audial
+
+result = audial.text2vox(
+    reference_file="voice_clip.wav",
+    midi_file="melody.mid",          # 9 notes
+    lyrics="amazing|-|-|grace|-|how|sweet|the|sound",
+    lyrics_mode="per_note",
+)
+```
+
+Here "amazing" is sung across notes 1-3 and "grace" across notes 4-5; the held notes are
+merged into their predecessor before synthesis and their pitch movement is kept as a bend,
+so the sung line still follows the drawn melody and the returned MIDI shows the merged
+notes.
+
+**There is no rest token.** A note that should be silent should not be in the MIDI at all.
+
+Two rules apply:
+
+1. The token count must equal the MIDI note count.
+2. The first token must be a syllable -- a hold continues something, and there is nothing
+   before note 1.
+
+Rule 2 (and an empty lyric string) is checked by the SDK **before anything is uploaded**,
+so a typo costs no uploads and creates no execution:
+
+```python
+from audial.api.exceptions import AudialValidationError
+
+try:
+    audial.text2vox(..., lyrics="-|grace", lyrics_mode="per_note")
+except AudialValidationError as e:
+    print(e)           # note 1 has no syllable; the first note needs one
+    print(e.position)  # 1 -- the 1-based note the message is about
+```
+
+Rule 1 needs the MIDI, so it is the API's; it comes back as the same exception, raised
+from the API's `400 {"code": "LYRICS_INVALID", "position", "message"}` response:
+
+```
+9 tokens for 10 notes; the first unmatched note starts at 2.4 s
+```
+
+`audial.text2vox_tokens()` answers "how many notes does this lyric string need?" without
+running anything, and raises the same error for input that cannot be sung:
+
+```python
+tokens = audial.text2vox_tokens("amazing|-|-|grace|-|how|sweet|the|sound")
+len(tokens)                               # 9 -- notes required
+[t.text for t in tokens if not t.hold]    # ['amazing', 'grace', 'how', 'sweet', 'the', 'sound']
+tokens[1]                                 # Token(text='', hold=True)
+```
+
+`auto` and `1to1` are unchanged, and every per-note string that worked before renders
+identically.
+
+### Cold Starts and Service Status
+
+Audial's GPU workers scale to zero. The first request after an idle period has to start a
+worker and load the model before any audio is processed, which adds a few minutes to that
+one job; every run after it is fast. Without a word about it, a cold start looks exactly
+like a hung job.
+
+The API decides warm vs cold before it dispatches and writes the phase onto the execution
+(and onto each pipeline step), so every client reads the same field:
+
+```python
+"warmup": {
+  "state": "cold" | "initializing" | "working" | "done",
+  "expectedColdStartMs": 180000,   # this endpoint's recent cold-start p50
+  "expectedRunMs": 42000,
+  "delayMs": 174000                # state "done": what the wait actually cost
+}
+```
+
+Every function that polls -- `text2vox`, `sound2vital`, `generate_music`, `stem_split`,
+`master`, `generate_midi`, `analyze`, and the pipeline-backed `segment` and
+`generate_samples` -- takes an optional `on_progress` callback that receives each status as
+it arrives. `audial.warmup` turns one into the sentence the CLI, the website and the MCP
+server all show, and `WarmupTracker` reduces the stream to one line per change:
+
+```python
+import audial
+
+tracker = audial.warmup.WarmupTracker()
+
+def report(status):
+    for line in tracker.changes(status):
+        print(line)
+
+audial.sound2vital("kick.wav", on_progress=report)
+# Warming up the machine - the first request takes a few minutes longer than
+# usual (about 3 min); every run after this is faster
+# Working on your job...
+```
+
+`audial.status()` wraps `GET /functions/status`, which can be called *before* a job exists
+-- the only way to explain the wait before someone sits through it:
+
+```python
+doc = audial.status("text2vox")
+# {'items': [{'function': 'text2vox', 'warm': False, 'queued': 0,
+#             'expectedColdStartMs': 180000, 'expectedRunMs': 42000}]}
+
+if audial.warmup.is_cold(doc, "text2vox"):
+    print(audial.warmup.cold_start_message(
+        audial.warmup.find_function(doc, "text2vox").get("expectedColdStartMs")
+    ))
+```
+
+`status()` accepts either an SDK name (`"generate_samples"`) or the API's own name
+(`"sample-pack"`), and omitting it reports every function. The call is cached server-side
+and costs no rate-limit allowance. The CLI does this automatically before every job (see
+[Service Status Command](#service-status-command)).
+
 ### Error Handling
 
 The SDK provides custom exception classes for better error handling:
@@ -721,11 +859,16 @@ from audial.api.exceptions import (
     AudialError,
     AudialAuthError,
     AudialAPIError,
+    AudialValidationError,
     SubscriptionRequiredError,
 )
 
 try:
     result = audial.stem_split("path/to/audio.mp3")
+except AudialValidationError as e:
+    print(f"Unusable input: {e} (position {e.position})")
+    # Input rejected before (or instead of) running anything -- today this is
+    # per-note lyrics; `position` is the 1-based note the message is about
 except SubscriptionRequiredError as e:
     print(f"Subscription required: {e}")
     # sound2vital and text2vox require an active Audial subscription
@@ -744,6 +887,8 @@ except AudialError as e:
 Note: `SubscriptionRequiredError` is a subclass of `AudialAPIError`, so an `except
 AudialAPIError` clause also catches it -- catch `SubscriptionRequiredError` first if you
 need to handle it differently (e.g. prompting the user to subscribe).
+`AudialValidationError` is a subclass of `AudialError` and carries a `position`; see
+[Per-note lyrics](#per-note-lyrics).
 
 ## Command Line Interface
 
@@ -1070,6 +1215,20 @@ audial text2vox path/to/voice_clip.wav "la la la la" --melody-audio path/to/melo
 audial text2vox path/to/voice_clip.wav "la|la|la|la" --midi path/to/melody.mid --lyrics-mode per_note
 ```
 
+One token per MIDI note; `-` (or `+`, or an empty token) holds the previous syllable
+through that note, so a word can span notes. See [Per-note lyrics](#per-note-lyrics).
+
+```bash
+audial text2vox voice_clip.wav "amazing|-|-|grace|-|how|sweet|the|sound" \
+  --midi melody.mid --lyrics-mode per_note
+```
+
+A lyric string that cannot be sung is refused before anything is uploaded:
+
+```
+Error: note 1 has no syllable; the first note needs one
+```
+
 #### Custom Results Folder
 
 ```bash
@@ -1081,6 +1240,33 @@ audial text2vox path/to/voice_clip.wav "la la la la" --midi path/to/melody.mid -
 ```bash
 audial text2vox path/to/voice_clip.wav "la la la la" --midi path/to/melody.mid --api-key your_custom_api_key
 ```
+
+### Service Status Command
+
+Which functions have a worker awake right now (`GET /functions/status`):
+
+```bash
+audial status
+```
+
+```
+Service status:
+  text2vox: warming up
+    Warming up the machine - the first request takes a few minutes longer than usual (about 3 min); every run after this is faster
+  sample-pack: ready
+  stem-splitter: ready, 2 queued
+```
+
+One function, or the raw document:
+
+```bash
+audial status --function text2vox
+audial status --json
+```
+
+Every command that runs a job makes this check itself before it submits, and then prints
+each warm-up phase as the job reports it, so a cold start is explained rather than looking
+like a hang. See [Cold Starts and Service Status](#cold-starts-and-service-status).
 
 ## Result Data Structure
 
