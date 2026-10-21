@@ -57,7 +57,8 @@ def text2vox(
 
     Args:
         reference_file: Path to a short (5-10s) reference voice clip -- the
-            voice to sing in.
+            voice to sing in. A clip over 20 s is cut to its loudest 8 s before
+            synthesis and ``warnings`` says so; send a clip, not a whole track.
         lyrics: The lyrics to sing. Required. In "per_note" mode this is
             pipe-delimited, one token per MIDI note, where `-` (or `+`, or an
             empty token) holds the previous syllable through this note:
