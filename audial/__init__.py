@@ -2,7 +2,7 @@
 Audial SDK: A Python package for interacting with the Audial audio processing API.
 """
 
-__version__ = "1.4.1"
+__version__ = "1.4.2"
 
 # Pipelines: multi-step jobs (audial.pipelines.run/get/cancel/list).
 # Imported before the functions below, which build on it.

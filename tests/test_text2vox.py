@@ -51,6 +51,18 @@ def test_requires_exactly_one_of_midi_or_melody_audio(audio_file, midi_file, tmp
         )
 
 
+def test_midi_only_options_are_refused_with_melody_audio(audio_file, tmp_path):
+    melody_path = tmp_path / "melody.wav"
+    melody_path.write_bytes(b"RIFF")
+    common = dict(reference_file=audio_file, lyrics="la la la", melody_audio_file=str(melody_path), results_folder=str(tmp_path))
+    with pytest.raises(AudialError, match="strict_pitch only applies to a MIDI melody"):
+        text2vox(strict_pitch=True, **common)
+    with pytest.raises(AudialError, match="no_pitch_bends only applies to a MIDI melody"):
+        text2vox(no_pitch_bends=True, **common)
+    with pytest.raises(AudialError, match='lyrics_mode="per_note" counts syllables against MIDI notes'):
+        text2vox(lyrics_mode="per_note", **{**common, "lyrics": "la|la|la"})
+
+
 def test_requires_nonempty_lyrics(audio_file, midi_file, tmp_path):
     with pytest.raises(AudialError):
         text2vox(reference_file=audio_file, lyrics="", midi_file=midi_file, results_folder=str(tmp_path))

@@ -80,7 +80,9 @@ def text2vox(
         cfg_strength: Worker synthesis option; see text2vox-runpod defaults.
         nfe_steps: Worker synthesis option.
         pitch_shift: Worker synthesis option.
-        strict_pitch: Worker synthesis option.
+        strict_pitch: Render the melody as a synthetic line the engine listens
+            to instead of reading the MIDI. Not recommended since 1.4.2: the
+            MIDI path sings the written pitch and this one does not. MIDI only.
         bend_smoothing_ms: Worker synthesis option.
         no_pitch_bends: Worker synthesis option.
         leading_silence_s: Worker synthesis option.
@@ -133,6 +135,25 @@ def text2vox(
         raise AudialError(
             "text2vox requires exactly one of midi_file or melody_audio_file"
         )
+
+    # Three things only make sense with a MIDI melody. The API refuses them too
+    # (400 INVALID_INPUT), but saying so here costs no upload at all.
+    if melody_audio_file:
+        if strict_pitch:
+            raise AudialError(
+                "strict_pitch only applies to a MIDI melody; it does nothing for "
+                "melody_audio_file. Drop it, or pass the melody as midi_file"
+            )
+        if no_pitch_bends:
+            raise AudialError(
+                "no_pitch_bends only applies to a MIDI melody. Drop it, or pass "
+                "the melody as midi_file"
+            )
+        if lyrics_mode == "per_note":
+            raise AudialError(
+                'lyrics_mode="per_note" counts syllables against MIDI notes, so it '
+                'needs midi_file. With melody_audio_file use lyrics_mode="auto"'
+            )
 
     # Per-note lyrics are checked before anything is uploaded: an unsingable
     # token used to cost two uploads and an execution before the worker said
