@@ -2,7 +2,7 @@
 
 ![Audial Logo](./assets/Rectangle110447.png)
 
-[audialmusic.ai](https://audialmusic.ai) · [API reference](https://audialmusic.ai/resources/api-reference)
+[audialmusic.ai](https://audialmusic.ai?utm_source=github&utm_medium=readme&utm_campaign=sdk) · [API reference](https://audialmusic.ai/resources/api-reference?utm_source=github&utm_medium=readme&utm_campaign=sdk)
 
 A powerful Python SDK for audio analysis and manipulation through the Audial API.
 
@@ -31,7 +31,7 @@ Before installing the Audial SDK, ensure you have the following:
 
 - Python 3.7 or higher
 - pip package manager (typically included with Python)
-- An Audial API key and User ID (obtain from the [Audial website](https://audialmusic.ai))
+- An Audial API key and User ID (obtain from the [Audial website](https://audialmusic.ai?utm_source=github&utm_medium=readme&utm_campaign=sdk))
 
 ### Installation Methods
 
@@ -605,4 +605,4 @@ For issues, questions, or feedback, please [create an issue](https://github.com/
 
 ---
 
-Powered by [Audial](https://audialmusic.ai).
+Powered by [Audial](https://audialmusic.ai?utm_source=github&utm_medium=readme&utm_campaign=sdk).
