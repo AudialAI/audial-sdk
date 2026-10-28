@@ -960,7 +960,7 @@ class AudialProxy:
 
         Args:
             exe_id: The execution ID.
-            task_type: One of text2music, cover, remix, extract, lego, complete, understand.
+            task_type: One of text2music, cover, remix, lego, understand.
             prompt: Text describing the desired music.
             lyrics: Song lyrics (for vocal generation).
             bpm: Target BPM.
@@ -969,7 +969,7 @@ class AudialProxy:
             audio_duration: Duration in seconds (10-600).
             vocal_language: Language code for vocals (default "en").
             reference_file: Dict with filename/url for cover mode.
-            source_file: Dict with filename/url for remix/extract/lego/complete/understand.
+            source_file: Dict with filename/url for remix/lego/understand.
             audio_cover_strength: 0.0-1.0, how faithful to original (cover/remix).
             repainting_start: Start time in seconds for remix mode.
             repainting_end: End time in seconds for remix mode (-1 = end of song).

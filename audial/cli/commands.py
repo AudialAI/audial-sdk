@@ -148,11 +148,10 @@ def setup_generate_music_parser(subparsers):
     )
     parser.add_argument('prompt', help='Text describing the desired music style, mood, genre')
     parser.add_argument('--task-type', '-t', default='text2music',
-                       choices=['text2music', 'cover', 'remix', 'extract',
-                                'lego', 'complete', 'understand'],
+                       choices=['text2music', 'cover', 'remix', 'lego', 'understand'],
                        help='Generation mode (default: text2music)')
     parser.add_argument('--source', '-s', dest='source_file', default=None,
-                       help='Source audio file path (required for remix/extract/lego/complete/understand)')
+                       help='Source audio file path (required for remix/lego/understand)')
     parser.add_argument('--reference', '-r', dest='reference_file', default=None,
                        help='Reference audio file path (required for cover mode)')
     parser.add_argument('--lyrics', '-l', default=None, help='Song lyrics')

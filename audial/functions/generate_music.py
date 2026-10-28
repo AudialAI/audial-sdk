@@ -58,9 +58,9 @@ def generate_music(
     Args:
         prompt: Text describing desired music style, mood, genre.
         task_type: Generation mode -- one of:
-            text2music, cover, remix, extract, lego, complete, understand
+            text2music, cover, remix, lego, understand
         lyrics: Song lyrics for vocal generation (ignored if instrumental=True).
-        source_file: Path to source audio (required for remix/extract/lego/complete/understand).
+        source_file: Path to source audio (required for remix/lego/understand).
         reference_file: Path to reference audio (required for cover mode).
         bpm: Target beats per minute.
         key_scale: Target musical key (e.g. "C major", "A minor").
@@ -102,7 +102,7 @@ def generate_music(
         )
 
     # Validate that source/reference files are provided when required
-    needs_source = task_type in ("remix", "extract", "lego", "complete", "understand")
+    needs_source = task_type in ("remix", "lego", "understand")
     needs_reference = task_type == "cover"
 
     if needs_source and not source_file:
