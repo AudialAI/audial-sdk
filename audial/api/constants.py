@@ -87,13 +87,14 @@ FUNCTION_MUSIC_GENERATOR = "music-generator"
 EXECUTION_TYPE_MUSIC_GENERATOR = "generated"
 
 # Music Generator task types
+# What the music worker accepts (its generator_request.VALID_TASK_TYPES). "extract" and
+# "complete" were listed here until 1.4.3 but the engine never supported them: the API now
+# refuses them with 400 INVALID_INPUT, and before that they failed on the worker.
 MUSIC_GENERATOR_TASK_TYPES = [
     "text2music",
     "cover",
     "remix",
-    "extract",
     "lego",
-    "complete",
     "understand",
 ]
 
