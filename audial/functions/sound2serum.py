@@ -30,8 +30,8 @@ def sound2serum(
     on_progress: Optional[Callable[[Dict[str, Any]], Any]] = None,
 ) -> dict:
     """
-    Synthesize a Serum 2 preset that reproduces the timbre of a short audio
-    clip (the Audial Synth "resynthesis" engine). No Audial plugin is needed
+    Synthesize a Serum 2 preset that reproduces the timbre of one isolated
+    sound (the Audial Synth "resynthesis" engine). No Audial plugin is needed
     for this one -- the output is a `.SerumPreset` file opened directly in
     Xfer's Serum 2.
 
@@ -41,8 +41,11 @@ def sound2serum(
     -- open it in Serum and the preset name you see is your sample's name.
 
     Args:
-        file_path: Path to the input audio file. Must be 20 seconds or
-            shorter -- longer input fails the job.
+        file_path: Path to the input audio file: one isolated sound, such as
+            a single note, chord stab or hit, ideally 1-4 seconds and dry.
+            Longer than 20 seconds fails the job. A loop, melody or drum
+            pattern gives a poor preset even under 20 seconds; trim it to
+            one note first.
         results_folder: Where to save output files. Default: audial_results/
         api_key: API key override.
         max_wait: Maximum seconds to wait for completion. Serum runs take
@@ -62,9 +65,12 @@ def sound2serum(
             preset: Local path to the downloaded .SerumPreset preset, if the
                 job produced one.
             scores: generation_metadata.scores dict (huang_similarity,
-                at_threshold, threshold, model), if present.
+                at_threshold, threshold, model), if present. at_threshold False
+                means a weaker match, usually because the input was not one
+                isolated sound.
             report: generation_metadata.report, if present.
-            warnings: generation_metadata.warnings list, if present.
+            warnings: generation_metadata.warnings list, if present. Includes a
+                note when the input sounds like several notes in a row.
 
     Raises:
         AudialError: If the input file doesn't exist.

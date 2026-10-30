@@ -1,4 +1,4 @@
-"""Example: Turn a short audio clip into a Serum 2 preset.
+"""Example: Turn one isolated sound into a Serum 2 preset.
 
 No Audial plugin is needed -- open the downloaded .SerumPreset file directly
 in Xfer's Serum 2.

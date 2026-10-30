@@ -1086,7 +1086,7 @@ class AudialProxy:
 
     def run_sound2vital(self, original_file: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Run sound2vital: analyze a short audio clip and synthesize a Vital
+        Run sound2vital: analyze one isolated sound and synthesize a Vital
         preset that reproduces its timbre.
 
         The API creates its own execution for this call (like
@@ -1145,7 +1145,7 @@ class AudialProxy:
 
     def run_sound2serum(self, original_file: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Run sound2serum: analyze a short audio clip and synthesize a Serum 2
+        Run sound2serum: analyze one isolated sound and synthesize a Serum 2
         preset that reproduces its timbre.
 
         The API creates its own execution for this call (like
