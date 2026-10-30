@@ -572,9 +572,11 @@ for midi_file, file_path in midi["files"]["files"].items():
 
 ### Sound-to-Vital Resynthesis (sound2vital)
 
-Synthesize a [Vital](https://vital.audio/) synth preset that reproduces the timbre of a
-short audio clip. This is a paid function -- it requires an active Audial subscription in
+Synthesize a [Vital](https://vital.audio/) synth preset that reproduces the timbre of one
+isolated sound. This is a paid function -- it requires an active Audial subscription in
 addition to a valid API key (see [Error Handling](#error-handling)).
+
+**Input:** One isolated sound: a single note, chord stab or hit, ideally 1-4 seconds and dry, 20 seconds at most. Not a loop, melody, drum pattern or anything with several notes in sequence: those produce a poor preset even under 20 seconds. To use a loop, trim it to one note first.
 
 #### Function Signature
 
@@ -610,9 +612,11 @@ A dictionary containing:
     any generated render/keyboard/report files)
 - `preset`: Local path to the downloaded `.vital` preset, if the job produced one
 - `scores`: `generation_metadata.scores` -- `huang_similarity`, `at_threshold`,
-  `threshold`, `model` -- if present
+  `threshold`, `model` -- if present. `at_threshold: False` means a weaker match, usually
+  because the input was not one isolated sound
 - `report`: `generation_metadata.report`, if present
-- `warnings`: `generation_metadata.warnings` list, if present
+- `warnings`: `generation_metadata.warnings` list, if present. Includes a note when the
+  input sounds like several notes in a row
 
 #### Example
 
@@ -628,10 +632,12 @@ print(f"Similarity score: {result['scores']['huang_similarity']}")
 ### Sound-to-Serum 2 Resynthesis (sound2serum)
 
 Synthesize a [Serum 2](https://xferrecords.com/products/serum-2) preset that reproduces
-the timbre of a short audio clip. No Audial plugin is needed for this one -- the output
+the timbre of one isolated sound. No Audial plugin is needed for this one -- the output
 is a `.SerumPreset` file opened directly in Xfer's Serum 2. This is a paid function -- it
 requires an active Audial subscription in addition to a valid API key (see [Error
 Handling](#error-handling)).
+
+**Input:** One isolated sound: a single note, chord stab or hit, ideally 1-4 seconds and dry, 20 seconds at most. Not a loop, melody, drum pattern or anything with several notes in sequence: those produce a poor preset even under 20 seconds. To use a loop, trim it to one note first.
 
 Serum runs take about 2.5 minutes, plus up to another 2.5 minutes if a worker has to
 cold-start -- `max_wait` defaults higher than `sound2vital`'s to cover that.
@@ -672,9 +678,11 @@ A dictionary containing:
   one. Saved as `<source file stem>.SerumPreset` -- Serum shows the file name as the
   preset name, so naming it after your sample is what shows up inside Serum
 - `scores`: `generation_metadata.scores` -- `huang_similarity`, `at_threshold`,
-  `threshold`, `model` -- if present
+  `threshold`, `model` -- if present. `at_threshold: False` means a weaker match, usually
+  because the input was not one isolated sound
 - `report`: `generation_metadata.report`, if present
-- `warnings`: `generation_metadata.warnings` list, if present
+- `warnings`: `generation_metadata.warnings` list, if present. Includes a note when the
+  input sounds like several notes in a row
 
 #### Example
 

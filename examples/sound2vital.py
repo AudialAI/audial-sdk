@@ -1,4 +1,4 @@
-"""Example: Turn a short audio clip into a Vital synth preset.
+"""Example: Turn one isolated sound into a Vital synth preset.
 
 Requires an active Audial subscription (see API_DOCUMENTATION.md).
 """

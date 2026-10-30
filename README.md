@@ -16,8 +16,8 @@ The Audial SDK provides a user-friendly interface to Audial's powerful audio pro
 - **Audio Mastering**: Apply professional mastering to your tracks
 - **Sample Pack Generation**: Create reusable samples from audio tracks
 - **MIDI Generation**: Convert audio to MIDI data
-- **Sound-to-Vital Resynthesis**: Turn a short audio clip into a Vital synth preset
-- **Sound-to-Serum 2 Resynthesis**: Turn a short audio clip into a Serum 2 preset
+- **Sound-to-Vital Resynthesis**: Turn one isolated sound (not a loop) into a Vital synth preset
+- **Sound-to-Serum 2 Resynthesis**: Turn one isolated sound (not a loop) into a Serum 2 preset
 - **Text-to-Vocal Synthesis**: Sing lyrics in the timbre of a reference voice clip
 
 Every function requires an Audial account with an active subscription; without one the API answers HTTP 402 `SUBSCRIPTION_REQUIRED` and the SDK raises `SubscriptionRequiredError`. Files are always given as local paths — the SDK uploads them for you.

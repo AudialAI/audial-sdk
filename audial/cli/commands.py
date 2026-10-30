@@ -188,9 +188,9 @@ def setup_sound2vital_parser(subparsers):
     """Setup the parser for the sound2vital command."""
     parser = subparsers.add_parser(
         'sound2vital',
-        help='Synthesize a Vital preset that reproduces the timbre of a short (<=20s) audio clip'
+        help='Synthesize a Vital preset that reproduces the timbre of one isolated sound, not a loop'
     )
-    parser.add_argument('file_path', help='Path to the input audio file (20 seconds or shorter)')
+    parser.add_argument('file_path', help='Path to one isolated sound: a single note or hit, 20 seconds at most. Loops give a poor preset')
     parser.add_argument('--results-folder', help='Folder to save results (uses default if not specified)')
     parser.add_argument('--api-key', help='API key to use (uses default if not specified)')
     parser.set_defaults(func=sound2vital_command)
@@ -200,9 +200,9 @@ def setup_sound2serum_parser(subparsers):
     """Setup the parser for the sound2serum command."""
     parser = subparsers.add_parser(
         'sound2serum',
-        help='Synthesize a Serum 2 preset that reproduces the timbre of a short (<=20s) audio clip'
+        help='Synthesize a Serum 2 preset that reproduces the timbre of one isolated sound, not a loop'
     )
-    parser.add_argument('file_path', help='Path to the input audio file (20 seconds or shorter)')
+    parser.add_argument('file_path', help='Path to one isolated sound: a single note or hit, 20 seconds at most. Loops give a poor preset')
     parser.add_argument('--results-folder', help='Folder to save results (uses default if not specified)')
     parser.add_argument('--api-key', help='API key to use (uses default if not specified)')
     parser.set_defaults(func=sound2serum_command)
