@@ -24,10 +24,10 @@ DEV_REQUIRES = [
 
 setup(
     name="audial-sdk",
-    version="1.4.3",
+    version="1.5.0",
     author="Audial Team",
     author_email="support@audial.io",
-    description="Python SDK for Audial: AI stem splitting, mastering, MIDI generation, sample packs, segmentation, music generation, resynthesis and vocal synthesis",
+    description="Python SDK for Audial: AI stem splitting, mastering, MIDI generation, sample packs, segmentation, music generation, Vital and Serum 2 preset resynthesis, and vocal synthesis",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://audialmusic.ai",

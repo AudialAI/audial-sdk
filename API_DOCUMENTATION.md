@@ -14,6 +14,7 @@ This document provides comprehensive documentation for the Audial SDK, including
   - [Sample Pack Generation](#sample-pack-generation)
   - [MIDI Generation](#midi-generation)
   - [Sound-to-Vital Resynthesis (sound2vital)](#sound-to-vital-resynthesis-sound2vital)
+  - [Sound-to-Serum 2 Resynthesis (sound2serum)](#sound-to-serum-2-resynthesis-sound2serum)
   - [Text-to-Vocal Synthesis (text2vox)](#text-to-vocal-synthesis-text2vox)
     - [Per-note lyrics](#per-note-lyrics)
   - [Cold Starts and Service Status](#cold-starts-and-service-status)
@@ -28,6 +29,7 @@ This document provides comprehensive documentation for the Audial SDK, including
   - [Sample Pack Generation Commands](#sample-pack-generation-commands)
   - [MIDI Generation Commands](#midi-generation-commands)
   - [sound2vital Commands](#sound2vital-commands)
+  - [sound2serum Commands](#sound2serum-commands)
   - [text2vox Commands](#text2vox-commands)
   - [Service Status Command](#service-status-command)
 - [Result Data Structure](#result-data-structure)
@@ -623,6 +625,68 @@ print(f"Preset: {result['preset']}")
 print(f"Similarity score: {result['scores']['huang_similarity']}")
 ```
 
+### Sound-to-Serum 2 Resynthesis (sound2serum)
+
+Synthesize a [Serum 2](https://xferrecords.com/products/serum-2) preset that reproduces
+the timbre of a short audio clip. No Audial plugin is needed for this one -- the output
+is a `.SerumPreset` file opened directly in Xfer's Serum 2. This is a paid function -- it
+requires an active Audial subscription in addition to a valid API key (see [Error
+Handling](#error-handling)).
+
+Serum runs take about 2.5 minutes, plus up to another 2.5 minutes if a worker has to
+cold-start -- `max_wait` defaults higher than `sound2vital`'s to cover that.
+
+#### Function Signature
+
+```python
+audial.sound2serum(
+    file_path: str,
+    results_folder: Optional[str] = None,
+    api_key: Optional[str] = None,
+    max_wait: float = 480,
+    poll_interval: float = 5,
+    on_progress: Optional[Callable[[Dict[str, Any]], Any]] = None
+) -> Dict[str, Any]
+```
+
+#### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `file_path` | str | Yes | - | Path to the input audio file. Must be 20 seconds or shorter |
+| `results_folder` | str | No | `None` | Folder to save results (uses default if `None`) |
+| `api_key` | str | No | `None` | API key to use (uses default if `None`) |
+| `max_wait` | float | No | `480` | Maximum seconds to wait for completion (Serum runs take ~2.5 min, plus up to ~2.5 min for a cold start) |
+| `poll_interval` | float | No | `5` | Seconds between execution status polls |
+| `on_progress` | callable | No | `None` | Called with the execution record after every poll -- see [Cold Starts and Service Status](#cold-starts-and-service-status) |
+
+#### Returns
+
+A dictionary containing:
+- `execution`: API response data
+- `files`: Information about downloaded files
+  - `folder`: Path to the results folder
+  - `files`: Dictionary mapping filenames to local file paths (the `.SerumPreset`
+    preset plus any generated render/keyboard/report files)
+- `preset`: Local path to the downloaded `.SerumPreset` preset, if the job produced
+  one. Saved as `<source file stem>.SerumPreset` -- Serum shows the file name as the
+  preset name, so naming it after your sample is what shows up inside Serum
+- `scores`: `generation_metadata.scores` -- `huang_similarity`, `at_threshold`,
+  `threshold`, `model` -- if present
+- `report`: `generation_metadata.report`, if present
+- `warnings`: `generation_metadata.warnings` list, if present
+
+#### Example
+
+```python
+import audial
+
+result = audial.sound2serum("path/to/clip.wav")
+
+print(f"Preset: {result['preset']}")
+print(f"Similarity score: {result['scores']['huang_similarity']}")
+```
+
 ### Text-to-Vocal Synthesis (text2vox)
 
 Synthesize a sung vocal in the timbre of a short reference voice clip, following a melody
@@ -810,8 +874,8 @@ The API decides warm vs cold before it dispatches and writes the phase onto the 
 }
 ```
 
-Every function that polls -- `text2vox`, `sound2vital`, `generate_music`, `stem_split`,
-`master`, `generate_midi`, `analyze`, and the pipeline-backed `segment` and
+Every function that polls -- `text2vox`, `sound2vital`, `sound2serum`, `generate_music`,
+`stem_split`, `master`, `generate_midi`, `analyze`, and the pipeline-backed `segment` and
 `generate_samples` -- takes an optional `on_progress` callback that receives each status as
 it arrives. `audial.warmup` turns one into the sentence the CLI, the website and the MCP
 server all show, and `WarmupTracker` reduces the stream to one line per change:
@@ -871,7 +935,7 @@ except AudialValidationError as e:
     # per-note lyrics; `position` is the 1-based note the message is about
 except SubscriptionRequiredError as e:
     print(f"Subscription required: {e}")
-    # sound2vital and text2vox require an active Audial subscription
+    # sound2vital, sound2serum and text2vox require an active Audial subscription
     # (HTTP 402, code SUBSCRIPTION_REQUIRED) in addition to a valid API key
 except AudialAuthError as e:
     print(f"Authentication error: {e}")
@@ -1190,6 +1254,30 @@ audial sound2vital path/to/clip.wav --results-folder path/to/custom/folder
 
 ```bash
 audial sound2vital path/to/clip.wav --api-key your_custom_api_key
+```
+
+### sound2serum Commands
+
+Requires an active Audial subscription. No Audial plugin is needed -- the output is a
+`.SerumPreset` file opened directly in Xfer's Serum 2. Serum runs take about 2.5 minutes,
+plus up to another 2.5 minutes if a worker has to cold-start.
+
+#### Basic Usage
+
+```bash
+audial sound2serum path/to/clip.wav
+```
+
+#### Custom Results Folder
+
+```bash
+audial sound2serum path/to/clip.wav --results-folder path/to/custom/folder
+```
+
+#### Custom API Key
+
+```bash
+audial sound2serum path/to/clip.wav --api-key your_custom_api_key
 ```
 
 ### text2vox Commands

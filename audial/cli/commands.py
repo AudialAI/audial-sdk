@@ -16,6 +16,7 @@ from audial.functions.segment import segment
 from audial.functions.stem_split import stem_split
 from audial.functions.generate_music import generate_music
 from audial.functions.sound2vital import sound2vital
+from audial.functions.sound2serum import sound2serum
 from audial.functions.text2vox import text2vox
 from audial import pipelines
 from audial import warmup
@@ -193,6 +194,18 @@ def setup_sound2vital_parser(subparsers):
     parser.add_argument('--results-folder', help='Folder to save results (uses default if not specified)')
     parser.add_argument('--api-key', help='API key to use (uses default if not specified)')
     parser.set_defaults(func=sound2vital_command)
+
+
+def setup_sound2serum_parser(subparsers):
+    """Setup the parser for the sound2serum command."""
+    parser = subparsers.add_parser(
+        'sound2serum',
+        help='Synthesize a Serum 2 preset that reproduces the timbre of a short (<=20s) audio clip'
+    )
+    parser.add_argument('file_path', help='Path to the input audio file (20 seconds or shorter)')
+    parser.add_argument('--results-folder', help='Folder to save results (uses default if not specified)')
+    parser.add_argument('--api-key', help='API key to use (uses default if not specified)')
+    parser.set_defaults(func=sound2serum_command)
 
 
 def setup_text2vox_parser(subparsers):
@@ -641,6 +654,31 @@ def sound2vital_command(args) -> Dict[str, Any]:
         sys.exit(1)
 
 
+def sound2serum_command(args) -> Dict[str, Any]:
+    """Handle the sound2serum command."""
+    try:
+        result = sound2serum(
+            file_path=args.file_path,
+            results_folder=args.results_folder,
+            api_key=args.api_key,
+            on_progress=warmup_reporter("sound2serum", args),
+        )
+
+        print("\nsound2serum Results:")
+        if "preset" in result:
+            print(f"Preset: {result['preset']}")
+        if "scores" in result and isinstance(result["scores"], dict):
+            print(f"Scores: {result['scores']}")
+        print(f"Files downloaded: {len(result['files']['files'])}")
+        print(f"\nResults saved to: {result['files']['folder']}")
+
+        return result
+
+    except AudialError as e:
+        print(f"Error: {str(e)}", file=sys.stderr)
+        sys.exit(1)
+
+
 def text2vox_command(args) -> Dict[str, Any]:
     """Handle the text2vox command."""
     try:
@@ -814,6 +852,7 @@ def cli():
     setup_generate_samples_parser(subparsers)
     setup_generate_music_parser(subparsers)
     setup_sound2vital_parser(subparsers)
+    setup_sound2serum_parser(subparsers)
     setup_text2vox_parser(subparsers)
     setup_segment_parser(subparsers)
     setup_pipeline_parser(subparsers)

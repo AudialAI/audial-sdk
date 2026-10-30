@@ -17,6 +17,7 @@ The Audial SDK provides a user-friendly interface to Audial's powerful audio pro
 - **Sample Pack Generation**: Create reusable samples from audio tracks
 - **MIDI Generation**: Convert audio to MIDI data
 - **Sound-to-Vital Resynthesis**: Turn a short audio clip into a Vital synth preset
+- **Sound-to-Serum 2 Resynthesis**: Turn a short audio clip into a Serum 2 preset
 - **Text-to-Vocal Synthesis**: Sing lyrics in the timbre of a reference voice clip
 
 Every function requires an Audial account with an active subscription; without one the API answers HTTP 402 `SUBSCRIPTION_REQUIRED` and the SDK raises `SubscriptionRequiredError`. Files are always given as local paths — the SDK uploads them for you.
@@ -402,6 +403,17 @@ result = audial.sound2vital("path/to/clip.wav")
 print(f"Preset: {result['preset']}")
 ```
 
+### Sound-to-Serum 2 Resynthesis
+
+Turn a short (<=20s) audio clip into a Serum 2 preset. No Audial plugin is needed --
+open the downloaded `.SerumPreset` file directly in Xfer's Serum 2. Serum runs take
+about 2.5 minutes, plus up to another 2.5 minutes if a worker has to cold-start:
+
+```python
+result = audial.sound2serum("path/to/clip.wav")
+print(f"Preset: {result['preset']}")
+```
+
 ### Text-to-Vocal Synthesis
 
 Sing lyrics in the timbre of a reference voice clip, following a melody:
@@ -514,6 +526,9 @@ audial generate-midi audio.mp3 --bpm 120
 # Sound-to-Vital resynthesis
 audial sound2vital clip.wav
 
+# Sound-to-Serum 2 resynthesis
+audial sound2serum clip.wav
+
 # Text-to-vocal synthesis
 audial text2vox voice_clip.wav "la la la la" --midi melody.mid
 audial text2vox voice_clip.wav "amazing|-|-|grace|-|how|sweet|the|sound" \
@@ -593,6 +608,7 @@ The SDK includes example scripts in the [examples directory](examples/):
 - [MIDI Generation](examples/midi_generation.py)
 - [Music Generation](examples/music_generation.py)
 - [Sound-to-Vital Resynthesis](examples/sound2vital.py)
+- [Sound-to-Serum 2 Resynthesis](examples/sound2serum.py)
 - [Text-to-Vocal Synthesis](examples/text2vox.py)
 
 ## License

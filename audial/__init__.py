@@ -2,7 +2,7 @@
 Audial SDK: A Python package for interacting with the Audial audio processing API.
 """
 
-__version__ = "1.4.3"
+__version__ = "1.5.0"
 
 # Pipelines: multi-step jobs (audial.pipelines.run/get/cancel/list).
 # Imported before the functions below, which build on it.
@@ -24,6 +24,7 @@ from audial.functions.samples import generate_samples
 from audial.functions.midi import generate_midi
 from audial.functions.generate_music import generate_music
 from audial.functions.sound2vital import sound2vital
+from audial.functions.sound2serum import sound2serum
 from audial.functions.text2vox import text2vox
 
 # Import config module
@@ -55,6 +56,7 @@ __all__ = [
     "generate_midi",
     "generate_music",
     "sound2vital",
+    "sound2serum",
     "text2vox",
     "config",
     "login",

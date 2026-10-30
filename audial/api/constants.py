@@ -119,6 +119,16 @@ SOUND2VITAL_MAX_INPUT_DURATION = 20
 SOUND2VITAL_DEFAULT_MAX_WAIT = 360
 SOUND2VITAL_DEFAULT_POLL_INTERVAL = 5
 
+# sound2serum -- same contract as sound2vital, targeting Serum 2 instead of
+# Vital. The execution stays exeType "preset" with synth="serum2"; the preset
+# file lands under exe_data["preset"]["presetSerumPreset"].
+FUNCTION_SOUND2SERUM = "sound2serum"
+# Input audio must be at most this many seconds long.
+SOUND2SERUM_MAX_INPUT_DURATION = 20
+# Serum runs take ~2.5 min plus a ~2.5 min cold start; leave headroom.
+SOUND2SERUM_DEFAULT_MAX_WAIT = 480
+SOUND2SERUM_DEFAULT_POLL_INTERVAL = 5
+
 # text2vox
 FUNCTION_TEXT2VOX = "text2vox"
 EXECUTION_TYPE_TEXT2VOX = "generated"
@@ -142,6 +152,7 @@ STATUS_FUNCTIONS = {
     "generate_midi": FUNCTION_GENERATE_MIDI,
     "generate_music": FUNCTION_MUSIC_GENERATOR,
     "sound2vital": FUNCTION_SOUND2VITAL,
+    "sound2serum": FUNCTION_SOUND2SERUM,
     "text2vox": FUNCTION_TEXT2VOX,
 }
 
