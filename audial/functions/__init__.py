@@ -9,6 +9,7 @@ from audial.functions.master import master
 from audial.functions.samples import generate_samples
 from audial.functions.midi import generate_midi
 from audial.functions.sound2vital import sound2vital
+from audial.functions.sound2serum import sound2serum
 from audial.functions.text2vox import text2vox
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     "generate_samples",
     "generate_midi",
     "sound2vital",
+    "sound2serum",
     "text2vox",
 ]

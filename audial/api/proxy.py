@@ -16,6 +16,8 @@ from audial.api.constants import (
     EXECUTION_STATE_COMPLETED,
     EXECUTION_STATE_FAILED,
     DEFAULT_POLLING_INTERVAL,
+    FUNCTION_SOUND2VITAL,
+    FUNCTION_SOUND2SERUM,
     MAX_RETRIES,
     REQUEST_TIMEOUT,
     STATUS_FUNCTIONS,
@@ -1109,7 +1111,7 @@ class AudialProxy:
             },
         }
 
-        url = f"{self.base_url}/functions/run/sound2vital"
+        url = f"{self.base_url}/functions/run/{FUNCTION_SOUND2VITAL}"
         headers = get_auth_headers(self.api_key)
 
         try:
@@ -1140,6 +1142,65 @@ class AudialProxy:
             return {"state": "processing", "info": "sound2vital initiated but response timed out"}
         except requests.exceptions.RequestException as e:
             raise AudialAPIError(f"sound2vital request error: {str(e)}")
+
+    def run_sound2serum(self, original_file: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Run sound2serum: analyze a short audio clip and synthesize a Serum 2
+        preset that reproduces its timbre.
+
+        The API creates its own execution for this call (like
+        run_music_generator) -- the returned dict's "exeId" is the one to
+        poll, not any exeId used for the earlier upload.
+
+        Args:
+            original_file (Dict[str, Any]): {"filename", "url"} for the
+                already-uploaded reference audio (see upload_execution_file).
+
+        Returns:
+            Dict[str, Any]: The execution object (poll get_execution with
+                its "exeId" until state is "completed" or "failed").
+        """
+        user_id = get_user_id(self.api_key)
+
+        request_data = {
+            "userId": user_id,
+            "original": {
+                "filename": original_file.get("filename"),
+                "url": original_file.get("url"),
+            },
+        }
+
+        url = f"{self.base_url}/functions/run/{FUNCTION_SOUND2SERUM}"
+        headers = get_auth_headers(self.api_key)
+
+        try:
+            response = self.session.post(
+                url,
+                headers=headers,
+                json=request_data,
+                timeout=REQUEST_TIMEOUT,
+            )
+
+            _check_subscription_required(response)
+            if response.status_code in (401, 403):
+                raise AudialAuthError(f"Authentication failed: {response.status_code}")
+
+            if response.status_code >= 400:
+                error_message = f"API error: {response.status_code}"
+                try:
+                    error_data = response.json()
+                    if isinstance(error_data, dict) and "error" in error_data:
+                        error_message = f"API error: {error_data['error']}"
+                except (ValueError, KeyError):
+                    pass
+                raise AudialAPIError(error_message)
+
+            return response.json()
+
+        except requests.exceptions.Timeout:
+            return {"state": "processing", "info": "sound2serum initiated but response timed out"}
+        except requests.exceptions.RequestException as e:
+            raise AudialAPIError(f"sound2serum request error: {str(e)}")
 
     def run_text2vox(
         self,
