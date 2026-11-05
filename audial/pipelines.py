@@ -4,11 +4,11 @@ Pipelines: multi-step Audial jobs run as a single API call.
 A pipeline is an ordered list of Audial functions that the API runs for you,
 feeding each step's output into the next. Two pipelines exist today:
 
-    segmentation   stem-split -> segmentation
-    sample-pack    stem-split -> sample-pack
+    segmentation   segmentation (the analysis) -> add-ons (the features, tags
+                   and lyrics that options.featuresToExtract asks for)
+    sample-pack    prepare (the analysis and its stems, started together)
+                   -> sample-pack
 
-Both of those second steps need separated stems, so calling them directly
-means running the stem splitter first and passing the stem URLs along.
 `audial.pipelines.run()` sends the file once and the API does the rest::
 
     import audial
@@ -27,9 +27,10 @@ The dict returned (and handed to `on_progress`) is the API's PipelineStatus::
       "pipelineId": ..., "pipeline": "sample-pack",
       "state": "queued" | "running" | "completed" | "failed" | "cancelled",
       "currentStep": "sample-pack",
-      "steps": [{"name": "stem-split", "state": "completed", "exeId": ...,
+      "steps": [{"name": "prepare", "state": "completed", "exeId": ...,
                  "durationMs": 41000, "subStage": ..., "error": ...}, ...],
-      "outputs": {"stems": {...}, "segmentation": [...], "samples": [...]},
+      "outputs": {"segmentation": [...], "analysis": "<merged view URL>",
+                  "samples": [...], "warnings": [...]},
       "original": {"filename": ..., "url": ...},
       "options": {...},
       "error": {"step": ..., "code": ..., "message": ...}   # failed only
@@ -221,7 +222,7 @@ class StepTracker:
     show is the difference. Feed each status to `changes()` and it returns the
     human-readable step transitions since the previous call, e.g.::
 
-        ["stem-split completed in 41 s", "sample-pack running"]
+        ["prepare completed in 41 s", "sample-pack running"]
 
     Used by the CLI's `audial pipeline` progress output and by wrappers (the
     MCP server) that forward step changes to their own clients.

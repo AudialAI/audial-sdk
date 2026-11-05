@@ -8,6 +8,23 @@ import os
 import pytest
 
 
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "dev: runs against the Audial dev API (real runs); skipped unless selected with -m dev",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    """`dev` tests make real API calls: they run only when `-m dev` asks for them."""
+    if "dev" in (config.getoption("-m") or ""):
+        return
+    skip = pytest.mark.skip(reason="dev API test: run with `pytest -m dev`")
+    for item in items:
+        if item.get_closest_marker("dev") is not None:
+            item.add_marker(skip)
+
+
 @pytest.fixture(autouse=True)
 def audial_env(monkeypatch):
     """

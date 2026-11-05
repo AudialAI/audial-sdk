@@ -26,8 +26,8 @@ Two ways in:
 
 * Pass ``on_progress`` to any function that polls (``text2vox``,
   ``sound2vital``, ``generate_music``, ``stem_split``, ``master``,
-  ``generate_midi``, ``analyze``, ``segment``, ``generate_samples``,
-  ``pipelines.run``). It is called with each execution/pipeline status;
+  ``generate_midi``, ``analyze``, ``segment``, ``audio_features``, ``tags``,
+  ``lyrics``, ``generate_samples``, ``pipelines.run``). It is called with each execution/pipeline status;
   ``message(status)`` turns one into a sentence, and ``WarmupTracker`` into
   one line per change::
 

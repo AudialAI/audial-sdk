@@ -39,6 +39,11 @@ FUNCTION_MASTERING = "mastering"
 FUNCTION_SAMPLE_PACK = "sample-pack"
 FUNCTION_GENERATE_MIDI = "generate-midi"
 
+# Analysis add-ons: POST /functions/run/<name> with {userId, analysisExeId}.
+FUNCTION_AUDIO_FEATURES = "audio-features"
+FUNCTION_AUDIO_TAGS = "audio-tags"
+FUNCTION_LYRICS = "lyrics"
+
 # Execution types
 EXECUTION_TYPE_STEM = "stem"
 EXECUTION_TYPE_MODIFIED = "modified"
@@ -154,6 +159,9 @@ STATUS_FUNCTIONS = {
     "sound2vital": FUNCTION_SOUND2VITAL,
     "sound2serum": FUNCTION_SOUND2SERUM,
     "text2vox": FUNCTION_TEXT2VOX,
+    "audio_features": FUNCTION_AUDIO_FEATURES,
+    "tags": FUNCTION_AUDIO_TAGS,
+    "lyrics": FUNCTION_LYRICS,
 }
 
 # Warm-up phases written onto an execution / pipeline step.
@@ -176,9 +184,19 @@ PIPELINE_SAMPLE_PACK = "sample-pack"
 PIPELINE_SEGMENTATION = "segmentation"
 
 # Pipeline name -> ordered step names, mirroring the server's PIPELINES table.
+# segmentation: the analysis, then the add-ons featuresToExtract asks for.
+# sample-pack: the analysis and its stems together ("prepare"), then the pack.
+# Pipelines started before 2026-11 report "stem-split" as their first step.
 PIPELINES = {
-    PIPELINE_SEGMENTATION: ["stem-split", "segmentation"],
-    PIPELINE_SAMPLE_PACK: ["stem-split", "sample-pack"],
+    PIPELINE_SEGMENTATION: ["segmentation", "add-ons"],
+    PIPELINE_SAMPLE_PACK: ["prepare", "sample-pack"],
+}
+
+# The function whose machine a pipeline waits on first, for the CLI's
+# cold-start check before it submits.
+PIPELINE_FIRST_FUNCTION = {
+    PIPELINE_SEGMENTATION: FUNCTION_SEGMENTATION,
+    PIPELINE_SAMPLE_PACK: FUNCTION_STEM_SPLITTER,
 }
 
 # Pipeline states
@@ -208,3 +226,69 @@ DEFAULT_PIPELINE_POLL_INTERVAL = 5
 
 # Default page size for GET /pipelines.
 DEFAULT_PIPELINE_LIST_LIMIT = 20
+
+
+# ---------------------------------------------------------------------------
+# The analysis and its add-ons (SDK 1.6).
+# ---------------------------------------------------------------------------
+
+# SDK name of an add-on -> the function that runs it, and its key on the
+# analysis record (`addons.<key>`).
+ADDON_FUNCTIONS = {
+    "features": FUNCTION_AUDIO_FEATURES,
+    "tags": FUNCTION_AUDIO_TAGS,
+    "lyrics": FUNCTION_LYRICS,
+    "samplePack": FUNCTION_SAMPLE_PACK,
+}
+
+# featuresToExtract values that each add-on answers.
+FEATURE_ADDONS = {
+    "mode": "features",
+    "energy": "features",
+    "loudness": "features",
+    "danceability": "features",
+    "tatum": "features",
+    "key": "features",
+    "tags": "tags",
+    "lyrics": "lyrics",
+}
+
+# The add-on run states on an analysis record.
+ADDON_STATE_QUEUED = "queued"
+ADDON_STATE_RUNNING = "running"
+ADDON_STATE_COMPLETED = "completed"
+ADDON_STATE_FAILED = "failed"
+ADDON_STATE_CANCELLED = "cancelled"
+ADDON_TERMINAL_STATES = (ADDON_STATE_COMPLETED, ADDON_STATE_FAILED, ADDON_STATE_CANCELLED)
+
+# HTTP 409 codes of an add-on run that cannot start yet (or at all).
+ERROR_STEMS_NOT_READY = "STEMS_NOT_READY"
+ERROR_ADDON_UNAVAILABLE = "ADDON_UNAVAILABLE"
+ERROR_ANALYSIS_NOT_READY = "ANALYSIS_NOT_READY"
+
+# The words customers read for them (the same on the website and in the MCP server).
+STEMS_NOT_READY_TEXT = "This track is still being prepared. Try again in a minute."
+ADDON_UNAVAILABLE_TEXT = "This result can't be added to this analysis."
+STEMS_FAILED_TEXT = "We couldn't prepare this track."
+PREPARING_TEXT = "Preparing the track…"
+INSTRUMENTAL_TEXT = "No vocals in this track."
+
+# Execution states in which an analysis is still on its way.
+ANALYSIS_IN_FLIGHT_STATES = (
+    EXECUTION_STATE_CREATED,
+    EXECUTION_STATE_INITIALIZED,
+    EXECUTION_STATE_PROCESSING,
+    "queued",
+    "running",
+)
+
+# How long an add-on keeps retrying while the track is being prepared
+# (409 STEMS_NOT_READY), and how long it then waits for its own run.
+ADDON_DEFAULT_WAIT_S = 600
+ADDON_DEFAULT_MAX_WAIT = 900
+ADDON_DEFAULT_POLL_INTERVAL = 5
+
+# How long segment() waits for the analysis itself (about half a minute warm;
+# the first request after a quiet period also waits for a machine to start).
+ANALYSIS_DEFAULT_MAX_WAIT = 900
+ANALYSIS_DEFAULT_POLL_INTERVAL = 3

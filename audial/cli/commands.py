@@ -5,6 +5,7 @@ Command-line interface for Audial SDK.
 import os
 import sys
 import argparse
+import contextlib
 import json
 from typing import List, Optional, Dict, Any
 
@@ -13,6 +14,9 @@ from audial.functions.master import master
 from audial.functions.midi import generate_midi
 from audial.functions.samples import generate_samples
 from audial.functions.segment import segment
+from audial.functions.audio_features import audio_features
+from audial.functions.tags import tags
+from audial.functions.lyrics import lyrics as lyrics_addon
 from audial.functions.stem_split import stem_split
 from audial.functions.generate_music import generate_music
 from audial.functions.sound2vital import sound2vital
@@ -21,11 +25,25 @@ from audial.functions.text2vox import text2vox
 from audial import pipelines
 from audial import warmup
 from audial.status import status as functions_status
-from audial.api.constants import PIPELINES, STATUS_FUNCTIONS
+from audial.api.constants import (
+    ADDON_DEFAULT_WAIT_S,
+    INSTRUMENTAL_TEXT,
+    PIPELINE_FIRST_FUNCTION,
+    PIPELINES,
+    STATUS_FUNCTIONS,
+)
 from audial.utils.config import get_api_key, get_results_folder, set_api_key, set_results_folder, get_user_id, set_user_id
 from audial.api.exceptions import AudialError
 from audial.api import device_login
 from audial.utils import config as audial_config
+
+
+GENRE_CHOICES = [
+    "Default", "Afro House", "Tech House", "Bass House", "Blues", "Breakbeat",
+    "Classic Rock", "Country", "Deep House", "Drum N Bass", "Dubstep", "Gospel",
+    "Grime140", "House", "Indie", "Jazz", "Latin", "Metal", "Minimal House",
+    "Pop", "R&B", "Rock", "Techno", "Trance", "Trap", "UK Garage"
+]
 
 
 def setup_analyze_parser(subparsers):
@@ -71,52 +89,92 @@ def setup_generate_samples_parser(subparsers):
     """Setup the parser for the generate-samples command."""
     parser = subparsers.add_parser(
         'generate-samples',
-        help='Generate a sample pack from an audio file'
+        help='Generate a sample pack from an audio file, or from an analysis with --analysis-id'
     )
-    parser.add_argument('file_path', help='Path to the audio file')
+    parser.add_argument('file_path', nargs='?', default=None,
+                       help='Path to the audio file (leave out with --analysis-id)')
+    parser.add_argument('--analysis-id', default=None,
+                       help='Make the pack from an analysis instead (its stems and sections; included with it)')
     parser.add_argument('--job-type', default='sample_pack', choices=['sample_pack'],
                        help='Type of sample pack job to run (default: sample_pack)')
     parser.add_argument('--components', nargs='+', default=['drums', 'bass', 'melody'],
                        choices=['drums', 'bass', 'melody'],
                        help='Components to include in the sample pack (default: drums bass melody)')
-    parser.add_argument('--genre', default='Default',
-                       choices=[
-                           "Default", "Afro House", "Tech House", "Bass House", "Blues", "Breakbeat",
-                           "Classic Rock", "Country", "Deep House", "Drum N Bass", "Dubstep", "Gospel",
-                           "Grime140", "House", "Indie", "Jazz", "Latin", "Metal", "Minimal House",
-                           "Pop", "R&B", "Rock", "Techno", "Trance", "Trap", "UK Garage"
-                       ],
+    parser.add_argument('--genre', default='Default', choices=GENRE_CHOICES,
                        help='Genre of the track (default: Default)')
     parser.add_argument('--results-folder', help='Folder to save results (uses default if not specified)')
     parser.add_argument('--api-key', help='API key to use (uses default if not specified)')
     parser.set_defaults(func=generate_samples_command)
 
 
+SEGMENT_HELP = (
+    "Find a track's sections, tempo and bars in about half a minute. "
+    "Add audio features, tags or lyrics afterwards with `audial features`, `audial tags` "
+    "and `audial lyrics` on the analysis id it prints"
+)
+
+
 def setup_segment_parser(subparsers):
     """Setup the parser for the segment command."""
-    parser = subparsers.add_parser(
-        'segment',
-        help='Segment an audio file into logical sections and analyze its components'
-    )
-    parser.add_argument('file_path', help='Path to the audio file')
-    # Components is not configurable by the user as per requirements
-    parser.add_argument('--analysis-type', default='select_features',
-                       help='Type of analysis to perform (default: select_features)')
-    parser.add_argument('--features', nargs='+',
-                       default=['mode', 'energy', 'loudness', 'danceability', 'tatum', 'lyrics', 'tags'],
+    parser = subparsers.add_parser('segment', help=SEGMENT_HELP, description=SEGMENT_HELP)
+    parser.add_argument('file_path', help='Path to the audio file (the mix; no stems needed)')
+    parser.add_argument('--genre', default=None, choices=GENRE_CHOICES,
+                       help='Genre of the track; it picks dance or song section names')
+    edm = parser.add_mutually_exclusive_group()
+    edm.add_argument('--edm', dest='edm', action='store_const', const=True, default=None,
+                     help='Dance section names: INTRO, UP, CHORUS, DOWN, OUTRO')
+    edm.add_argument('--no-edm', dest='edm', action='store_const', const=False,
+                     help='Song section names: INTRO, VERSE, UP, CHORUS, OUTRO')
+    parser.add_argument('--features', nargs='+', default=None,
                        choices=['mode', 'energy', 'loudness', 'danceability', 'tatum', 'lyrics', 'key', 'tags'],
-                       help='Features to extract')
-    parser.add_argument('--genre', default='Default',
-                       choices=[
-                           "Default", "Afro House", "Tech House", "Bass House", "Blues", "Breakbeat",
-                           "Classic Rock", "Country", "Deep House", "Drum N Bass", "Dubstep", "Gospel",
-                           "Grime140", "House", "Indie", "Jazz", "Latin", "Metal", "Minimal House",
-                           "Pop", "R&B", "Rock", "Techno", "Trance", "Trap", "UK Garage"
-                       ],
-                       help='Genre of the track (default: Default)')
+                       help='Also run these add-ons with the analysis (slower: tags and lyrics wait for '
+                            'the stems). Default: none')
+    # Accepted for scripts written for 1.5; no longer used.
+    parser.add_argument('--analysis-type', default=None, help=argparse.SUPPRESS)
+    parser.add_argument('--json', dest='as_json', action='store_true',
+                       help='Print the result as JSON instead of a summary')
     parser.add_argument('--results-folder', help='Folder to save results (uses default if not specified)')
     parser.add_argument('--api-key', help='API key to use (uses default if not specified)')
     parser.set_defaults(func=segment_command)
+
+
+ADDON_COMMANDS = {
+    'features': (
+        'Get audio features (energy, danceability, loudness, mode, key, beat division) for an '
+        'analysis id or an audio file (a file is analysed first)'
+    ),
+    'tags': (
+        'Get tags (genre, moods, instruments, artist tags) for an analysis id or an audio file '
+        '(a file is analysed first)'
+    ),
+    'lyrics': (
+        'Get lyrics with word timings for an analysis id or an audio file (a file is analysed first)'
+    ),
+}
+
+
+def setup_addon_parsers(subparsers):
+    """Setup the parsers for the features, tags and lyrics commands."""
+    for name, text in ADDON_COMMANDS.items():
+        parser = subparsers.add_parser(name, help=text, description=(
+            text + '. Included with the analysis. Tags and lyrics read the analysis\'s stems, '
+            'which are made in the background; until they are ready this waits '
+            '("This track is still being prepared").'
+        ))
+        parser.add_argument('target', metavar='analysis_id_or_file',
+                           help='An analysis id (from `audial segment`) or a path to an audio file')
+        parser.add_argument('--genre', default=None, choices=GENRE_CHOICES,
+                           help='Genre of the track, when a file is analysed first')
+        parser.add_argument('--rerun', action='store_true',
+                           help='Make a new result even if one exists')
+        parser.add_argument('--wait-s', type=float, default=ADDON_DEFAULT_WAIT_S,
+                           help='Seconds to keep trying while the track is being prepared '
+                                f'(default: {ADDON_DEFAULT_WAIT_S})')
+        parser.add_argument('--json', dest='as_json', action='store_true',
+                           help='Print the result as JSON instead of a summary')
+        parser.add_argument('--results-folder', help='Folder to save results (uses default if not specified)')
+        parser.add_argument('--api-key', help='API key to use (uses default if not specified)')
+        parser.set_defaults(func=addon_command, addon=name)
 
 
 def setup_stem_split_parser(subparsers):
@@ -225,7 +283,7 @@ def setup_text2vox_parser(subparsers):
     parser.add_argument('--melody-audio', dest='melody_audio_file', default=None,
                        help='Path to override melody audio (required unless --midi is given)')
     parser.add_argument('--word-timestamps', dest='word_timestamps_file', default=None,
-                       help='Path to a Whisper word-timestamps JSON, used by auto-align')
+                       help='Path to a word-timestamps JSON for the reference clip, used by auto-align')
     parser.add_argument('--lyrics-mode', default='auto', choices=['auto', 'per_note', '1to1'],
                        help='Lyrics alignment mode (default: auto). per_note takes one token '
                             'per MIDI note; see the lyrics argument for the hold grammar')
@@ -247,7 +305,8 @@ def setup_pipeline_parser(subparsers):
     """Setup the parser for the pipeline command."""
     parser = subparsers.add_parser(
         'pipeline',
-        help='Run a multi-step Audial pipeline (stem split, then sample pack or segmentation) in one call'
+        help='Run a multi-step Audial pipeline in one call: segmentation (the analysis, then its add-ons) '
+             'or sample-pack (the analysis and stems, then the pack)'
     )
     parser.add_argument('name', choices=sorted(PIPELINES),
                        help='Pipeline to run: ' + '; '.join(
@@ -504,8 +563,11 @@ def generate_midi_command(args) -> Dict[str, Any]:
 def generate_samples_command(args) -> Dict[str, Any]:
     """Handle the generate-samples command."""
     try:
+        if bool(args.file_path) == bool(args.analysis_id):
+            raise AudialError("Give an audio file or --analysis-id (one of them)")
         result = generate_samples(
             file_path=args.file_path,
+            analysis_id=args.analysis_id,
             job_type=args.job_type,
             components=args.components,
             genre=args.genre,
@@ -527,31 +589,148 @@ def generate_samples_command(args) -> Dict[str, Any]:
         sys.exit(1)
 
 
+def _quiet_stdout(as_json: bool):
+    """With --json, progress lines go to stderr so stdout holds only the JSON."""
+    return contextlib.redirect_stdout(sys.stderr) if as_json else contextlib.nullcontext()
+
+
+def _clock(seconds) -> str:
+    if not isinstance(seconds, (int, float)):
+        return "?:??"
+    return f"{int(seconds // 60)}:{seconds % 60:05.2f}"
+
+
+def _print_analysis(result: Dict[str, Any]) -> None:
+    data = result.get("audio_segmentation") or {}
+    analysis_id = result.get("analysis_id")
+    print("\nAnalysis:")
+    print(f"Analysis ID: {analysis_id}")
+    if data.get("bpm"):
+        print(f"BPM: {data['bpm']}")
+    grid = data.get("grid") if isinstance(data.get("grid"), dict) else {}
+    beats = grid.get("beat_count", len(data.get("beat_times") or []))
+    bars = grid.get("bar_count", len(data.get("bar_times") or []))
+    if beats:
+        print(f"Beats: {beats}, bars: {bars}")
+    sections = data.get("sections") if isinstance(data.get("sections"), list) else []
+    if sections:
+        print("Sections:")
+        for section in sections:
+            if isinstance(section, dict):
+                print(f"  {_clock(section.get('start'))}  {section.get('label')}")
+    for warning in result.get("warnings") or []:
+        print(f"Warning: {warning}")
+    files = (result.get("files") or {}).get("files") or {}
+    if files:
+        print(f"\nResults saved to: {next(iter(files.values()))}")
+    if analysis_id:
+        print(f"\nNext: audial features {analysis_id} | audial tags {analysis_id} | audial lyrics {analysis_id}")
+
+
 def segment_command(args) -> Dict[str, Any]:
     """Handle the segment command."""
     try:
-        # Always use the default components as per requirements
-        components = ['bass', 'beat', 'melody', 'vocal']
-        
-        result = segment(
-            file_path=args.file_path,
-            components=components,  # Always use default components
-            analysis_type=args.analysis_type,
-            features=args.features,
-            genre=args.genre,
-            results_folder=args.results_folder,
-            api_key=args.api_key,
-            on_progress=warmup_reporter("segment", args),
-        )
-        
-        # Print a summary of the results
-        print("\nSegmentation Results:")
-        print(f"Files downloaded: {len(result['files']['files'])}")
-        print(f"\nResults saved to: {result['files']['folder']}")
-        
-        # Return the full result for programmatic use if needed
+        with _quiet_stdout(args.as_json):
+            result = segment(
+                file_path=args.file_path,
+                genre=args.genre,
+                edm=args.edm,
+                features=args.features,
+                results_folder=args.results_folder,
+                on_progress=warmup_reporter("segment", args),
+                api_key=args.api_key,
+            )
+        if args.as_json:
+            print(json.dumps({k: v for k, v in result.items() if k != "segmentation"}, indent=2, default=str))
+        else:
+            _print_analysis(result)
         return result
-    
+
+    except AudialError as e:
+        print(f"Error: {str(e)}", file=sys.stderr)
+        sys.exit(1)
+
+
+ADDON_FUNCTIONS_BY_COMMAND = {
+    'features': ('audio_features', 'Audio features'),
+    'tags': ('tags', 'Tags'),
+    'lyrics': ('lyrics', 'Lyrics'),
+}
+
+
+def _print_features(result: Dict[str, Any]) -> None:
+    song = result.get("song") or {}
+    for name, label in (("key", "Key"), ("mode", "Mode"), ("energy", "Energy"),
+                        ("danceability", "Danceability"), ("loudness", "Loudness (LUFS)"),
+                        ("tatum", "Beat division")):
+        if name in song:
+            print(f"{label}: {song[name]}")
+    sections = result.get("sections") or []
+    if sections:
+        print("Sections (energy / danceability):")
+        for section in sections:
+            print(f"  {_clock(section.get('start'))}  {section.get('label')}: "
+                  f"{section.get('energy')} / {section.get('danceability')}")
+
+
+def _print_tags(result: Dict[str, Any]) -> None:
+    genres = [g.split("---")[-1] for g in result.get("genre") or []]
+    print(f"Genre: {', '.join(genres) or '-'}")
+    song_tags = result.get("song_tags") or {}
+    for part, label in (("full", "Song"), ("bass", "Bass"), ("melody", "Melody")):
+        tags_of = song_tags.get(part) or {}
+        for name in ("moods", "instruments", "artist_tags", "extra_tags"):
+            values = tags_of.get(name) or []
+            if values:
+                print(f"{label} {name.replace('_', ' ')}: {', '.join(values)}")
+
+
+def _print_lyrics(result: Dict[str, Any]) -> None:
+    lines = result.get("lines") or []
+    if result.get("is_instrumental") or not lines:
+        print(INSTRUMENTAL_TEXT)
+        return
+    for line in lines:
+        words = " ".join(str(word[0]) for word in line.get("words") or [] if word)
+        print(f"  {_clock(line.get('start'))}  {words}")
+
+
+def addon_command(args) -> Dict[str, Any]:
+    """Handle the features, tags and lyrics commands."""
+    function_name, label = ADDON_FUNCTIONS_BY_COMMAND[args.addon]
+    run = {"audio_features": audio_features, "tags": tags, "lyrics": lyrics_addon}[function_name]
+    try:
+        with _quiet_stdout(args.as_json):
+            analysis_id = args.target
+            looks_like_a_path = os.sep in args.target or '.' in os.path.basename(args.target)
+            if looks_like_a_path and not os.path.isfile(args.target):
+                raise AudialError(f"File not found: {args.target}")
+            if os.path.isfile(args.target):
+                analysed = segment(
+                    file_path=args.target,
+                    genre=args.genre,
+                    results_folder=args.results_folder,
+                    on_progress=warmup_reporter("segment", args),
+                    api_key=args.api_key,
+                )
+                analysis_id = analysed["analysis_id"]
+                print(f"Analysis ID: {analysis_id}")
+            result = run(
+                analysis_id,
+                rerun=args.rerun,
+                wait_s=args.wait_s,
+                results_folder=args.results_folder,
+                api_key=args.api_key,
+                on_progress=warmup_reporter(function_name, args),
+            )
+        if args.as_json:
+            print(json.dumps(result, indent=2, default=str, ensure_ascii=False))
+            return result
+
+        print(f"\n{label} (analysis {analysis_id}):")
+        {"features": _print_features, "tags": _print_tags, "lyrics": _print_lyrics}[args.addon](result)
+        return result
+
     except AudialError as e:
         print(f"Error: {str(e)}", file=sys.stderr)
         sys.exit(1)
@@ -732,7 +911,8 @@ def pipeline_command(args) -> Dict[str, Any]:
         reporter = None
         if not args.as_json:
             reporter = warmup.WarmupReporter(printer=lambda line: print(f"  {line}"))
-            reporter.preflight(PIPELINES[args.name][0], api_key=args.api_key)
+            reporter.preflight(PIPELINE_FIRST_FUNCTION.get(args.name, PIPELINES[args.name][0]),
+                               api_key=args.api_key)
 
         def on_progress(status):
             # Step progress, one line per change; suppressed under --json so the
@@ -773,6 +953,10 @@ def pipeline_command(args) -> Dict[str, Any]:
                 print(f"\n{key.capitalize()} ({len(urls)}):")
                 for url in urls:
                     print(f"  {url}")
+        if outputs.get("analysis"):
+            print(f"\nAnalysis with every add-on: {outputs['analysis']}")
+        for warning in outputs.get("warnings") or []:
+            print(f"Warning: {warning}")
 
         return status
 
@@ -834,6 +1018,7 @@ def config_command(args) -> None:
 def cli():
     """Main entry point for the Audial CLI."""
     parser = argparse.ArgumentParser(
+        prog='audial',
         description='Audial SDK command-line interface for audio analysis and manipulation',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
@@ -855,6 +1040,7 @@ def cli():
     setup_sound2serum_parser(subparsers)
     setup_text2vox_parser(subparsers)
     setup_segment_parser(subparsers)
+    setup_addon_parsers(subparsers)
     setup_pipeline_parser(subparsers)
     setup_stem_split_parser(subparsers)
     setup_status_parser(subparsers)

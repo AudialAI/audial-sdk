@@ -739,7 +739,7 @@ audial.text2vox(
 | `lyrics` | str | Yes | - | The lyrics to sing. In `per_note` mode this is pipe-delimited, one token per MIDI note -- see [Per-note lyrics](#per-note-lyrics) |
 | `midi_file` | str | One of midi_file/melody_audio_file | `None` | Path to a MIDI file driving the melody |
 | `melody_audio_file` | str | One of midi_file/melody_audio_file | `None` | Path to override melody audio (skips strict-pitch synthesis) |
-| `word_timestamps_file` | str | No | `None` | Path to a Whisper word-timestamps JSON, used by auto-align |
+| `word_timestamps_file` | str | No | `None` | Path to a word-timestamps JSON, used by auto-align |
 | `lyrics_mode` | str | No | `"auto"` | `"auto"` (word count matches MIDI notes, auto-aligns via word_timestamps), `"per_note"` (pipe-delimited, one token per note -- see [Per-note lyrics](#per-note-lyrics)), or `"1to1"` (passed straight through) |
 | `reference_text` | str | No | `None` | What is said in the reference clip |
 | `cfg_strength` | float | No | `None` | Worker synthesis option |
