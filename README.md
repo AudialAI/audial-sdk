@@ -12,7 +12,7 @@ The Audial SDK provides a user-friendly interface to Audial's powerful audio pro
 
 - **Stem Splitting**: Separate tracks into individual components (vocals, drums, bass, other)
 - **Audio Analysis**: Extract BPM, key signatures, and other audio metadata
-- **Audio Segmentation**: Identify logical sections in audio tracks
+- **Song Analysis**: Find a track's sections, tempo and bars in about half a minute, then add audio features, tags, timed lyrics or a sample pack, one call each
 - **Audio Mastering**: Apply professional mastering to your tracks
 - **Sample Pack Generation**: Create reusable samples from audio tracks
 - **MIDI Generation**: Convert audio to MIDI data
@@ -23,6 +23,21 @@ The Audial SDK provides a user-friendly interface to Audial's powerful audio pro
 Every function requires an Audial account with an active subscription; without one the API answers HTTP 402 `SUBSCRIPTION_REQUIRED` and the SDK raises `SubscriptionRequiredError`. Files are always given as local paths — the SDK uploads them for you.
 
 The SDK supports both a Python API for integration into your projects and a command-line interface for direct use.
+
+> **What changed in 1.6**
+>
+> - Analysis is faster and needs only the mix: `audial.segment(path)` is one call that answers in
+>   about half a minute and returns an `analysis_id`.
+> - Features, tags and lyrics are separate calls on an analysis: `audial.audio_features(id)`,
+>   `audial.tags(id)`, `audial.lyrics(id)`. `segment(path, features=[...])` still runs them all
+>   in one go, as before.
+> - Lyrics now come with word timings.
+> - Analysis files describe beats with a tempo map (`grid`); the SDK still returns `beat_times`
+>   and `bar_times` (2.0 makes that opt-in; see `audial.grid`).
+> - Energy and danceability were rebuilt and now differ between tracks and sections. Loudness now
+>   follows the broadcast standard over both channels and reads 3–6 LU higher than before.
+>
+> Everything is listed in the [changelog](CHANGELOG.md).
 
 ## Installation
 
@@ -227,6 +242,15 @@ print(f"Drums saved to: {result['files']['files']['drums.mp3']}")
 analysis = audial.analyze("path/to/audio.mp3")
 print(f"BPM: {analysis['analysis']['bpm']}")
 print(f"Key: {analysis['analysis']['key']}")
+
+# Song analysis: sections, tempo and bars in about half a minute...
+song = audial.segment("path/to/audio.mp3", genre="Tech House")
+for section in song["audio_segmentation"]["sections"]:
+    print(section["label"], section["start"])
+
+# ...then audio features, tags and timed lyrics, one call each
+features = audial.audio_features(song["analysis_id"])
+lyrics = audial.lyrics(song["analysis_id"])
 ```
 
 ## Core Functions
@@ -269,32 +293,98 @@ print(f"BPM: {analysis['analysis']['bpm']}")
 print(f"Key: {analysis['analysis']['key']}")
 ```
 
-### Audio Segmentation
+### Song Analysis (Segmentation)
 
-Segment an audio track into sections and extract features. Segmentation
-analyses separated stems, so this runs as a **pipeline**: the track is split
-into stems first, then segmented, in a single API call. Tempo and key are
-detected automatically.
-
-```python
-segments = audial.segment(
-    "path/to/audio.mp3",
-    components=["bass", "beat", "melody", "vocal"],
-    analysis_type="select_features",
-    features=["energy", "tempo", "loudness", "danceability"],
-    genre="electronic"
-)
-```
-
-`segments["execution"]` is the pipeline status, so you can see what each step
-did. The same job can be run directly:
+Analysis finds your track's sections, tempo and bars in about half a minute. Send the mix: no
+stems are needed. Add audio features, tags, lyrics or a sample pack afterwards, one call each,
+whenever you like.
 
 ```python
-status = audial.pipelines.run("segmentation", "path/to/audio.mp3",
-                              options={"genre": "electronic"})
-print(status["outputs"]["segmentation"])   # analysis JSON URLs
-print(status["outputs"]["stems"])          # the stems it made on the way
+song = audial.segment("path/to/audio.mp3", genre="Tech House")
+
+analysis_id = song["analysis_id"]
+data = song["audio_segmentation"]
+print(data["bpm"], data["time_signature"])
+for section in data["sections"]:
+    print(f"{section['start']:7.2f}  {section['label']}  ({section['bars']} bars)")
 ```
+
+`genre` picks dance section names (INTRO, UP, CHORUS, DOWN, OUTRO) or song section names
+(INTRO, VERSE, UP, CHORUS, OUTRO); `edm=True` or `edm=False` chooses directly.
+
+#### Add-ons
+
+Each add-on is its own call on the analysis id, any time later. It waits for its result and
+returns it:
+
+```python
+features = audial.audio_features(analysis_id)  # energy, danceability, loudness, mode, key
+tags = audial.tags(analysis_id)                # genre, moods, instruments, artist tags
+lyrics = audial.lyrics(analysis_id)            # text, timed lines, word timings
+pack = audial.generate_samples(analysis_id=analysis_id)   # drums, bass and melody loops
+
+print(features["song"]["energy"], [s["energy"] for s in features["sections"]])
+for line in lyrics["lines"]:
+    print(line["start"], [word for word, start, end in line["words"]])
+```
+
+Energy and danceability are 0–100%. Energy reflects loudness, rhythmic activity and low end.
+Danceability reflects how strong and regular the beat is. Both are measured per section, so a
+drop reads higher than its breakdown.
+
+Tags, lyrics and the sample pack read the analysis's stems, which are made automatically in the
+background as soon as the analysis starts. Until they are ready the API answers
+`409 STEMS_NOT_READY` ("This track is still being prepared. Try again in a minute."); the SDK
+keeps trying for up to `wait_s` seconds (default 600). Audio features need only the mix.
+
+An analysis counts as one run. Everything you add to it (features, tags, lyrics, a sample pack)
+is included. Calling those on their own, without an analysis, counts as a run each. Calling an add-on
+again returns the same result (`rerun=True` makes a new one).
+
+#### The merged result
+
+`segment()` returns the analysis with every add-on generated so far:
+
+```python
+{
+  "analysis_id": "-Pq0...",
+  "audio_segmentation": {
+    "format_version": 4, "duration": 391.2, "bpm": 129.0, "time_signature": "4/4",
+    "grid": {...},                  # the tempo map (below)
+    "sections": [{"label": "INTRO", "start": 0.2, "end": 30.0, "start_bar": -2, "bars": 16, ...}, ...],
+    "phrases": [...],
+    "song_analysis": {...},         # audio features, genre, song_tags, lyrics, lyrics_lines
+    "segment_analysis": [{...}, ...],   # one object per section
+    "beat_times": [...], "bar_times": [...]   # with expand_beats=True (the 1.6 default)
+  },
+  "segmentation": {...},            # the same object, under its 1.5 name
+  "execution": {...},               # the analysis execution
+  "files": {"folder": "...", "files": {"analysis.json": "..."}}
+}
+```
+
+`segment(path, features=[...])` still works as it did in 1.5: it runs the `segmentation`
+pipeline, which makes the analysis and then the add-ons those features need, and the result
+already holds them. It takes longer, because tags and lyrics wait for the stems.
+
+#### The tempo map
+
+Beats and bars aren't listed one by one. `grid` describes them: where each constant-tempo piece
+starts, its BPM, and its bar and beat. Every beat time is `start + k × 60 / bpm`. Most tracks
+have one piece.
+
+```python
+grid = data["grid"]
+grid["beat_count"], grid["bar_count"]       # totals, no expansion needed
+audial.grid.expand(grid)        # [(time, bar, beat), ...]; bars 0 and below are the lead-in
+audial.grid.beat_times(grid)    # every beat time
+audial.grid.bar_times(grid)     # the start of every bar from bar 1
+audial.grid.beats_of(data)      # (beat times, bar times) of an analysis of any format
+```
+
+In 1.6 `segment()` also adds `beat_times` and `bar_times` for you (`expand_beats=True`), so
+scripts written for older results keep working. 2.0 makes this opt-in; pass `expand_beats=False`
+and use `audial.grid` to be ready for it.
 
 ### Audio Mastering
 
@@ -313,10 +403,9 @@ mastered = audial.master(
 
 ### Sample Pack Generation
 
-Generate a sample pack from an audio track. A sample pack is built from
-separated stems, so this runs as a **pipeline**: the track is split into stems
-first, then the pack is built, in a single API call. Tempo and key are detected
-automatically.
+Generate a sample pack from an audio track. From a file, this runs the `sample-pack`
+**pipeline**: the analysis and the stems start together, then the pack is built from them, in a
+single API call. Tempo and key are detected automatically.
 
 ```python
 samples = audial.generate_samples(
@@ -325,6 +414,14 @@ samples = audial.generate_samples(
     components=["drums", "bass", "melody"],
     genre="Tech House"
 )
+```
+
+From an analysis you already have, the pack reuses its stems and sections, and is included
+with the analysis:
+
+```python
+pack = audial.generate_samples(analysis_id=song["analysis_id"], components=["drums", "bass"])
+print(pack["components"])   # {"drums": {"status": "ok"}, "bass": {"status": "ok"}}
 ```
 
 `samples["execution"]` is the pipeline status, so you can see what each step
@@ -359,8 +456,8 @@ and the API feeds each step's output into the next.
 
 | Pipeline | Steps |
 |---|---|
-| `sample-pack` | `stem-split` -> `sample-pack` |
-| `segmentation` | `stem-split` -> `segmentation` |
+| `sample-pack` | `prepare` (the analysis and its stems, together) -> `sample-pack` |
+| `segmentation` | `segmentation` (the analysis) -> `add-ons` (the features, tags and lyrics asked for) |
 
 ```python
 status = audial.pipelines.run(
@@ -372,7 +469,6 @@ status = audial.pipelines.run(
 
 print(status["state"])               # "completed"
 print(status["outputs"]["samples"])  # sample URLs
-print(status["outputs"]["stems"])    # the stems made on the way
 ```
 
 `run()` uploads the file, polls until the pipeline finishes, and raises
@@ -388,11 +484,13 @@ audial.pipelines.list(limit=20)         # {"items": [...], "nextCursor": ...}
 
 Options are `components`, `genre`, `bpm`, `keyString` and `featuresToExtract`;
 everything omitted gets the API's default, and BPM and key are detected from
-the file when you do not send them.
+the file when you do not send them. A segmentation pipeline reports the
+analysis with every add-on as `outputs.analysis`, and any add-on that could
+not be made in `outputs.warnings`.
 
-`generate_samples()` and `segment()` run these pipelines for you and download
-the results, so use `pipelines.run()` directly when you want the URLs, the
-per-step timings, or control over polling.
+`generate_samples(file)` and `segment(file, features=[...])` run these
+pipelines for you and download the results, so use `pipelines.run()` directly
+when you want the URLs, the per-step timings, or control over polling.
 
 ### Sound-to-Vital Resynthesis
 
@@ -492,6 +590,10 @@ audial.status("text2vox")
 #             'expectedColdStartMs': 180000, 'expectedRunMs': 42000}]}
 ```
 
+The add-ons (`audio_features`, `tags`, `lyrics`) run on their own machines, so the first one
+after a quiet period can wait for a start too ("Starting up — this can take a minute");
+their `on_progress` reports it the same way, and `audial.status("tags")` asks ahead.
+
 The CLI does both for you: it checks before it submits and prints each phase as it
 changes. `audial status` shows every function at once. See [Cold Starts and Service
 Status](API_DOCUMENTATION.md#cold-starts-and-service-status).
@@ -507,16 +609,20 @@ audial stem-split audio.mp3 --stems vocals,drums,bass,other
 # Audio analysis
 audial analyze audio.mp3
 
-# Segmentation
-audial segment audio.mp3 --features energy,loudness,danceability
+# Song analysis, then its add-ons (an analysis id, or a file: it is analysed first)
+audial segment audio.mp3 --genre "Tech House"
+audial features <analysis_id>
+audial tags <analysis_id>
+audial lyrics audio.mp3
 
 # Mastering
 audial master audio.mp3 --reference reference.mp3
 
 # Sample pack generation
-audial generate-samples audio.mp3 --components drums,bass,melody
+audial generate-samples audio.mp3 --components drums bass melody
+audial generate-samples --analysis-id <analysis_id>
 
-# Pipelines: stem split + sample pack (or segmentation) in one call
+# Pipelines: several steps in one call
 audial pipeline sample-pack audio.mp3 --genre "Tech House" --components drums bass
 audial pipeline segmentation audio.mp3 --json
 
@@ -546,7 +652,9 @@ audial config --show
 
 ## Result Format
 
-All functions return a consistent result structure:
+Functions that make files return a consistent result structure (`segment()` adds
+`analysis_id` and `audio_segmentation`; the add-ons `audio_features`, `tags` and `lyrics`
+return their result itself and save it as `<analysis_id>_analysis/<name>.json`):
 
 ```python
 {
@@ -592,6 +700,14 @@ except AudialError as e:
     print(f"General error: {e}")
 ```
 
+The add-ons raise `AudialAPIError` with `e.code` set when the API refuses them (HTTP 409):
+
+- `STEMS_NOT_READY`: "This track is still being prepared. Try again in a minute." The stems were
+  still being made after `wait_s` seconds, or could not be made ("We couldn't prepare this
+  track.").
+- `ADDON_UNAVAILABLE`: "This result can't be added to this analysis." For example an older
+  analysis that kept no stems.
+
 ## Advanced Usage
 
 See the [API Documentation](API_DOCUMENTATION.md) for detailed information about all functions and their parameters.
@@ -602,7 +718,8 @@ The SDK includes example scripts in the [examples directory](examples/):
 
 - [Stem Splitting](examples/stem_splitting.py)
 - [Audio Analysis](examples/analysis.py)
-- [Audio Segmentation](examples/segmentation.py)
+- [Song Analysis with Audio Features and Tags](examples/segmentation.py)
+- [Lyrics with Word Timings](examples/lyrics_lines.py)
 - [Audio Mastering](examples/mastering.py)
 - [Sample Pack Generation](examples/sample_generation.py)
 - [MIDI Generation](examples/midi_generation.py)

@@ -29,8 +29,8 @@ for section in data["sections"]:
     print(f"  {section['start']:7.2f} s  {section['label']}")
 
 # Beats and bars come from the tempo map (`grid`); audial.grid reads any analysis.
-beat_times, bar_times = audial.grid.beats_of(data)
-print(f"{len(beat_times)} beats, {len(bar_times)} bars" + (f"; bar 1 at {bar_times[0]:.2f} s" if bar_times else ""))
+beats, bars = audial.grid.beats_of(data)
+print(f"{len(beats)} beats, {len(bars)} bars" + (f"; bar 1 at {bars[0]:.2f} s" if bars else ""))
 
 # 2. Audio features: energy, danceability, loudness, mode and key, per song and per section.
 features = audial.audio_features(analysis_id)
