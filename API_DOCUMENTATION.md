@@ -366,8 +366,7 @@ audial.segment(
 | `max_wait` | float | No | `900` | Seconds to wait for the analysis |
 | `components`, `analysis_type` | | No | | No longer used. Accepted by name and ignored, with a `DeprecationWarning` |
 
-Since 1.6 `genre` is the second positional parameter; pass everything after `file_path` by
-name to be safe.
+The parameters keep their 1.5 order. `edm`, `expand_beats` and `max_wait` are keyword-only.
 
 #### Available Features
 

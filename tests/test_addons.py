@@ -711,3 +711,13 @@ def test_status_names_cover_the_add_ons():
 
 def test_version():
     assert audial.__version__ == "1.6.0"
+
+
+def test_segment_keeps_the_15_positional_order():
+    """1.5 callers that pass arguments by position keep working: the new options are keyword-only."""
+    import inspect
+    from audial.functions.segment import segment as seg
+    params = list(inspect.signature(seg).parameters.values())
+    assert [p.name for p in params[:9]] == ["file_path", "components", "analysis_type", "features", "genre",
+                                            "results_folder", "api_key", "on_progress", "poll_interval"]
+    assert all(p.kind is inspect.Parameter.KEYWORD_ONLY for p in params if p.name in ("edm", "expand_beats", "max_wait"))

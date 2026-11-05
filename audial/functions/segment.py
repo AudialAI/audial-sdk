@@ -67,18 +67,18 @@ _EXPANSION_NOTICE_SHOWN = False
 
 def segment(
     file_path: str,
-    genre: Optional[str] = None,
-    edm: Optional[bool] = None,
-    features: Optional[List[str]] = None,
-    results_folder: Optional[str] = None,
-    on_progress: Optional[Callable[[Dict[str, Any]], Any]] = None,
-    expand_beats: bool = True,
-    *,
-    api_key: Optional[str] = None,
-    poll_interval: Optional[float] = None,
-    max_wait: float = ANALYSIS_DEFAULT_MAX_WAIT,
     components: Optional[List[str]] = None,
     analysis_type: Optional[str] = None,
+    features: Optional[List[str]] = None,
+    genre: Optional[str] = None,
+    results_folder: Optional[str] = None,
+    api_key: Optional[str] = None,
+    on_progress: Optional[Callable[[Dict[str, Any]], Any]] = None,
+    poll_interval: Optional[float] = None,
+    *,
+    edm: Optional[bool] = None,
+    expand_beats: bool = True,
+    max_wait: float = ANALYSIS_DEFAULT_MAX_WAIT,
 ) -> Dict[str, Any]:
     """
     Analyse a track: its sections, phrases and tempo map.

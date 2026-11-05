@@ -23,8 +23,8 @@
 - New `segment()` parameters: `edm` (dance or song section names) and `expand_beats`.
   `expand_beats=True`, the default in 1.6, adds `beat_times` and `bar_times` computed from `grid`.
   2.0 makes it opt-in, and a one-time `FutureWarning` says so.
-- `segment()`'s second positional parameter is now `genre`. `components` and `analysis_type` are
-  accepted by name and ignored (deprecated).
+- `segment()` keeps its 1.5 parameters and their order. `components` and `analysis_type` are
+  accepted and ignored (deprecated). The new `edm`, `expand_beats` and `max_wait` are keyword-only.
 - Tags, lyrics and sample packs read the analysis's stems, which are made automatically. While
   they are being made the API answers `409 STEMS_NOT_READY`; the add-on functions keep trying for
   up to `wait_s` seconds (default 600).
