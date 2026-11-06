@@ -40,8 +40,9 @@ for section in features["sections"]:
     energy = section.get("energy")
     print(f"  {str(section.get('label')):8} energy " + (f"{energy:.0%}" if energy is not None else "-"))
 
-# 3. Tags: genre, moods and instruments. They read the analysis's stems, which are
+# 3. Tags: genre, moods, instruments and a written description. They read the analysis's stems, which are
 #    made in the background; the call waits until they are ready.
 tags = audial.tags(analysis_id)
-print("\nGenre:", ", ".join(genre.split("---")[-1] for genre in tags["genre"]) or "-")
+print("\n" + (tags["description"] or "No description."))
+print("Genre:", ", ".join(tags["genre"]) or "-")  # genres are ready to show as they are
 print("Moods:", ", ".join(tags["song_tags"]["full"]["moods"]) or "-")

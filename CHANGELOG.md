@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.7.0
+
+- `audial.tags()` returns the tags exactly as the Audial website shows them: `genre` (display
+  names, with no `---`: use them as they are), `song_tags`, `description` and `warnings`.
+- `song_tags` has five parts: `full` (the mix, with `artist_tags`), `drums`, `bass`, `melody` and
+  `vocals`. A part whose stem is silent has `"silent": True` and empty lists. Tracks analysed
+  before this release have the first three parts only.
+- `description` is a short written description of the track, `""` when there is none.
+- `tags_version`, `source` and `extra_tags` are no longer returned.
+- `audial tags` prints the description first, then the genres as they are, then each part.
+
 ## 1.6.0
 
 - Analysis is faster and needs only the mix.

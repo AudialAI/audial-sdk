@@ -273,10 +273,13 @@ def _strings(value: Any) -> List[str]:
     return [item for item in listify(value) if isinstance(item, str)]
 
 
+# The lists each part of `song_tags` has. A part the view does not have stays absent.
 SONG_TAG_LISTS = {
-    "full": ("moods", "instruments", "artist_tags", "extra_tags"),
+    "full": ("moods", "instruments", "artist_tags"),
+    "drums": ("moods", "instruments"),
     "bass": ("moods", "instruments"),
     "melody": ("moods", "instruments"),
+    "vocals": ("moods", "instruments"),
 }
 
 
@@ -291,9 +294,11 @@ def normalize_result(key: str, result: Any) -> Dict[str, Any]:
         out["genre"] = _strings(out.get("genre"))
         song_tags = dict(out.get("song_tags")) if isinstance(out.get("song_tags"), dict) else {}
         for part, names in SONG_TAG_LISTS.items():
-            source = song_tags.get(part) if isinstance(song_tags.get(part), dict) else {}
-            song_tags[part] = dict(source, **{name: _strings(source.get(name)) for name in names})
+            if isinstance(song_tags.get(part), dict):
+                source = song_tags[part]
+                song_tags[part] = dict(source, **{name: _strings(source.get(name)) for name in names})
         out["song_tags"] = song_tags
+        out["description"] = out.get("description") if isinstance(out.get("description"), str) else ""
         out["warnings"] = _strings(out.get("warnings"))
     elif key == "lyrics":
         out["lyrics"] = out.get("lyrics") if isinstance(out.get("lyrics"), str) else ""

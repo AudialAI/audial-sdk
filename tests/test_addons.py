@@ -381,10 +381,26 @@ FEATURES = {
     "warnings": [],
 }
 
+# What the add-on stored on the record (internal), and what the merged view shows (display-ready).
+STORED_TAGS = {
+    "tags_version": 2,
+    "genre": ["Electronic---UK Garage"],
+    "song_tags": {"full": {"moods": ["dark"]}},
+    "source": {"title": "Operator", "artist": "Hans Glader"},
+    "warnings": ["The description could not be made."],
+}
+
 TAGS = {
-    "tags_version": 1,
-    "genre": ["Electronic---Tech House"],
-    "song_tags": {"full": {"moods": ["dark"], "instruments": ["synth"]}, "bass": {}, "melody": {"moods": []}},
+    "genre": ["UK Garage", "Speed Garage"],
+    "song_tags": {
+        "full": {"moods": ["driving", "groovy"], "instruments": ["drum machine"],
+                 "artist_tags": ["uk garage", "ukg"]},
+        "drums": {"moods": ["driving"], "instruments": ["kick"], "silent": False},
+        "bass": {"moods": ["deep"], "instruments": ["sub bass"], "silent": False},
+        "melody": {"moods": ["warm"], "instruments": ["electric piano"], "silent": False},
+        "vocals": {"moods": [], "instruments": [], "silent": True},
+    },
+    "description": "A driving UK garage cut built on a swung two-step groove.",
 }
 
 LYRICS = {
@@ -405,17 +421,19 @@ def test_addon_waits_for_stems(api, clock, tmp_path):
     api.on("GET", EXE,
            _ok(_analysis(stems="completed", tags={"state": "running", "exeId": "exe-tags", "startedAt": 1})),
            _ok(_analysis(stems="completed", tags={"state": "completed", "exeId": "exe-tags", "startedAt": 1,
-                                                  "result": TAGS})))
+                                                  "result": STORED_TAGS})))
     api.on("GET", f"/db/{USER}/execution/exe-tags", _ok({"exeId": "exe-tags", "state": "processing"}))
+    api.on("GET", VIEW, _ok(_view(**TAGS)))
 
     result = tags("exe-ana", results_folder=str(tmp_path), poll_interval=5)
 
     starts = api.requests_to("POST", "/functions/run/audio-tags")
     assert len(starts) == 2
     assert starts[0]["json"] == {"userId": USER, "analysisExeId": "exe-ana"}
-    assert result["genre"] == ["Electronic---Tech House"]
-    # Empty lists the database dropped come back as lists.
-    assert result["song_tags"]["bass"] == {"moods": [], "instruments": []}
+    # The merged view's display-ready values come back unchanged, plus the record's warnings.
+    assert result == dict(TAGS, warnings=["The description could not be made."])
+    assert "source" not in result and "tags_version" not in result
+    assert json.load(open(tmp_path / "exe-ana_analysis" / "tags.json")) == result
     assert clock.sleeps and clock.now < 600
 
 
@@ -682,6 +700,72 @@ def test_cli_tags_json_prints_only_json(capsys):
     assert json.loads(capsys.readouterr().out) == TAGS
 
 
+def test_cli_tags_prints_the_description_first_and_genres_verbatim(capsys):
+    with mock.patch("audial.cli.commands.tags", return_value=dict(TAGS, warnings=[])), \
+            mock.patch("audial.cli.commands.warmup_reporter", return_value=None):
+        _cli(["tags", "exe-ana"])
+    out = capsys.readouterr().out
+    lines = [line for line in out.splitlines() if line.strip()]
+    assert lines[0].startswith("Tags")  # the heading, then the description before anything else
+    assert lines[1] == TAGS["description"]
+    assert "Genre: UK Garage, Speed Garage" in out
+    assert out.index(TAGS["description"]) < out.index("Genre:")
+    assert "Song artist tags: uk garage, ukg" in out
+    assert "Drums instruments: kick" in out
+    assert "Vocals: No vocals in this track." in out
+    assert "Vocals moods" not in out
+
+
+def test_cli_tags_silent_and_empty_parts_print_the_website_lines(capsys):
+    """R17: a silent part prints its role's line; a part that is not silent but has no tags prints
+    "Nothing to tag in this part."; a part the view does not have (version 1 drums, vocals) prints nothing."""
+    song_tags = {
+        "full": {"moods": ["dark"], "instruments": [], "artist_tags": []},
+        "drums": {"moods": [], "instruments": [], "silent": True},
+        "bass": {"moods": [], "instruments": [], "silent": True},
+        "melody": {"moods": [], "instruments": [], "silent": True},
+        "vocals": {"moods": [], "instruments": [], "silent": False},
+    }
+    with mock.patch("audial.cli.commands.tags", return_value=dict(TAGS, song_tags=song_tags, warnings=[])), \
+            mock.patch("audial.cli.commands.warmup_reporter", return_value=None):
+        _cli(["tags", "exe-ana"])
+    out = capsys.readouterr().out
+    assert "Drums: No drums in this track." in out
+    assert "Bass: No bass in this track." in out
+    assert "Melody: No melody in this track." in out
+    assert "Vocals: Nothing to tag in this part." in out
+    assert "Song moods: dark" in out and "Song: Nothing" not in out
+
+    v1 = {"full": {"moods": ["dark"], "instruments": [], "artist_tags": []},
+          "bass": {"moods": [], "instruments": []}, "melody": {"moods": ["warm"], "instruments": []}}
+    with mock.patch("audial.cli.commands.tags", return_value=dict(TAGS, song_tags=v1, warnings=[])), \
+            mock.patch("audial.cli.commands.warmup_reporter", return_value=None):
+        _cli(["tags", "exe-ana"])
+    out = capsys.readouterr().out
+    assert "Bass: Nothing to tag in this part." in out
+    assert "Melody moods: warm" in out
+    assert "Drums" not in out and "Vocals" not in out
+
+
+def test_tags_without_description_or_extra_parts(api, clock, tmp_path):
+    """An older record's view has no description and no drums or vocals: they stay as the view has them."""
+    api.on("POST", "/functions/run/audio-tags",
+           _ok({"exeId": "exe-tags", "analysisExeId": "exe-ana", "addon": "tags", "state": "queued"}))
+    api.on("GET", EXE, _ok(_analysis(stems="completed", tags={"state": "completed", "exeId": "exe-tags",
+                                                              "startedAt": 1, "result": {"warnings": []}})))
+    api.on("GET", f"/db/{USER}/execution/exe-tags", _ok({"exeId": "exe-tags", "state": "processing"}))
+    api.on("GET", VIEW, _ok(_view(genre=["House"], song_tags={"full": {"moods": ["dark"]}, "bass": {}})))
+
+    result = tags("exe-ana", results_folder=str(tmp_path))
+
+    assert result["description"] == ""
+    assert result["genre"] == ["House"]
+    assert result["song_tags"]["full"]["moods"] == ["dark"]
+    assert result["song_tags"]["bass"] == {"moods": [], "instruments": []}
+    assert "vocals" not in result["song_tags"]
+    assert result["warnings"] == []
+
+
 def test_cli_segment_runs_the_fast_analysis_by_default(audio_file, capsys):
     view = _view()["audio_segmentation"]
     with mock.patch("audial.cli.commands.segment", return_value={
@@ -710,7 +794,7 @@ def test_status_names_cover_the_add_ons():
 
 
 def test_version():
-    assert audial.__version__ == "1.6.0"
+    assert audial.__version__ == "1.7.0"
 
 
 def test_segment_keeps_the_15_positional_order():

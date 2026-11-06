@@ -540,24 +540,30 @@ A value that could not be measured is `None`.
 
 #### Tags
 
-Genre, moods and instruments of the whole track and of its bass and melody, and artist tags.
+Genre, moods, instruments and artist tags for the mix and for each of its parts (drums, bass,
+melody and vocals), plus a written description of the track. The values are exactly what the Audial
+website shows: use the genres as they are.
 
 ```python
 tags = audial.tags(analysis_id)
 {
-  "tags_version": 1,
-  "genre": ["Electronic---Tech House", ...],      # show the part after "---"
+  "genre": ["UK Garage", "Speed Garage"],
   "song_tags": {
-    "full":   {"moods": [...], "instruments": [...], "artist_tags": [...], "extra_tags": [...]},
-    "bass":   {"moods": [...], "instruments": [...]},
-    "melody": {"moods": [...], "instruments": [...]}
+    "full":   {"moods": [...], "instruments": [...], "artist_tags": [...]},
+    "drums":  {"moods": [...], "instruments": [...], "silent": False},
+    "bass":   {"moods": [...], "instruments": [...], "silent": False},
+    "melody": {"moods": [...], "instruments": [...], "silent": False},
+    "vocals": {"moods": [...], "instruments": [...], "silent": False}
   },
-  "source": {...},                                # where the title and artist came from
+  "description": "A driving UK garage cut ...",   # "" when none was made
   "warnings": []
 }
 ```
 
-Every list is present, empty when nothing was found.
+Every list is present, empty when nothing was found. A part whose stem is silent has
+`"silent": True` and empty lists (for `vocals`, the track has no vocals). An analysis made before
+the drums and vocals were tagged has the first three parts only and no description (`""`). The same
+values are in `song_analysis` of the analysis (`genre`, `song_tags`, `description`).
 
 #### Lyrics
 
