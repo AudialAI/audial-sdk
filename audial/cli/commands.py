@@ -27,9 +27,11 @@ from audial import warmup
 from audial.status import status as functions_status
 from audial.api.constants import (
     ADDON_DEFAULT_WAIT_S,
+    EMPTY_PART_TEXT,
     INSTRUMENTAL_TEXT,
     PIPELINE_FIRST_FUNCTION,
     PIPELINES,
+    SILENT_PART_TEXT,
     STATUS_FUNCTIONS,
 )
 from audial.utils.config import get_api_key, get_results_folder, set_api_key, set_results_folder, get_user_id, set_user_id
@@ -681,10 +683,13 @@ def _print_tags(result: Dict[str, Any]) -> None:
     for part, label in (("full", "Song"), ("drums", "Drums"), ("bass", "Bass"),
                         ("melody", "Melody"), ("vocals", "Vocals")):
         tags_of = song_tags.get(part) or {}
-        if tags_of.get("silent"):
-            note = INSTRUMENTAL_TEXT if part == "vocals" else "No " + label.lower() + " in this track."
-            print(f"{label}: {note}")
-            continue
+        if part != "full" and part in song_tags:
+            if tags_of.get("silent") is True:
+                print(f"{label}: {SILENT_PART_TEXT[part]}")
+                continue
+            if not (tags_of.get("moods") or tags_of.get("instruments")):
+                print(f"{label}: {EMPTY_PART_TEXT}")
+                continue
         for name in ("moods", "instruments", "artist_tags"):
             values = tags_of.get(name) or []
             if values:

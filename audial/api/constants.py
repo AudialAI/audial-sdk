@@ -272,6 +272,14 @@ ADDON_UNAVAILABLE_TEXT = "This result can't be added to this analysis."
 STEMS_FAILED_TEXT = "We couldn't prepare this track."
 PREPARING_TEXT = "Preparing the track…"
 INSTRUMENTAL_TEXT = "No vocals in this track."
+# A tags part's line instead of its tags: a silent stem, or one with nothing to tag (as the website's tiles).
+SILENT_PART_TEXT = {
+    "drums": "No drums in this track.",
+    "bass": "No bass in this track.",
+    "melody": "No melody in this track.",
+    "vocals": INSTRUMENTAL_TEXT,
+}
+EMPTY_PART_TEXT = "Nothing to tag in this part."
 
 # Execution states in which an analysis is still on its way.
 ANALYSIS_IN_FLIGHT_STATES = (

@@ -716,6 +716,37 @@ def test_cli_tags_prints_the_description_first_and_genres_verbatim(capsys):
     assert "Vocals moods" not in out
 
 
+def test_cli_tags_silent_and_empty_parts_print_the_website_lines(capsys):
+    """R17: a silent part prints its role's line; a part that is not silent but has no tags prints
+    "Nothing to tag in this part."; a part the view does not have (version 1 drums, vocals) prints nothing."""
+    song_tags = {
+        "full": {"moods": ["dark"], "instruments": [], "artist_tags": []},
+        "drums": {"moods": [], "instruments": [], "silent": True},
+        "bass": {"moods": [], "instruments": [], "silent": True},
+        "melody": {"moods": [], "instruments": [], "silent": True},
+        "vocals": {"moods": [], "instruments": [], "silent": False},
+    }
+    with mock.patch("audial.cli.commands.tags", return_value=dict(TAGS, song_tags=song_tags, warnings=[])), \
+            mock.patch("audial.cli.commands.warmup_reporter", return_value=None):
+        _cli(["tags", "exe-ana"])
+    out = capsys.readouterr().out
+    assert "Drums: No drums in this track." in out
+    assert "Bass: No bass in this track." in out
+    assert "Melody: No melody in this track." in out
+    assert "Vocals: Nothing to tag in this part." in out
+    assert "Song moods: dark" in out and "Song: Nothing" not in out
+
+    v1 = {"full": {"moods": ["dark"], "instruments": [], "artist_tags": []},
+          "bass": {"moods": [], "instruments": []}, "melody": {"moods": ["warm"], "instruments": []}}
+    with mock.patch("audial.cli.commands.tags", return_value=dict(TAGS, song_tags=v1, warnings=[])), \
+            mock.patch("audial.cli.commands.warmup_reporter", return_value=None):
+        _cli(["tags", "exe-ana"])
+    out = capsys.readouterr().out
+    assert "Bass: Nothing to tag in this part." in out
+    assert "Melody moods: warm" in out
+    assert "Drums" not in out and "Vocals" not in out
+
+
 def test_tags_without_description_or_extra_parts(api, clock, tmp_path):
     """An older record's view has no description and no drums or vocals: they stay as the view has them."""
     api.on("POST", "/functions/run/audio-tags",
