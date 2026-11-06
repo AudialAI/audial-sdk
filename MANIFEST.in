@@ -2,5 +2,6 @@ include README.md
 include LICENSE
 include requirements.txt
 include API_DOCUMENTATION.md
+include CHANGELOG.md
 recursive-exclude * __pycache__
 recursive-exclude * *.py[co]

@@ -31,9 +31,14 @@ checked by the worker, which has the notes, and reported as
 
 ``audial.text2vox`` runs this validation itself before it uploads anything, so
 a bad lyric string costs no uploads and creates no execution.
+
+The module can also be called: ``audial.lyrics(analysis_id)`` gets the lyrics
+of an analysed track, with word timings (see ``audial.functions.lyrics.lyrics``).
 """
 
-from typing import List, NamedTuple
+import sys
+import types
+from typing import Any, List, NamedTuple
 
 from audial.api.exceptions import AudialValidationError
 
@@ -177,3 +182,20 @@ def flat_lyrics(tokens: List[Token]) -> str:
         str: e.g. "amazing grace how sweet the sound".
     """
     return " ".join(token.text for token in tokens if not token.hold)
+
+
+class _LyricsModule(types.ModuleType):
+    """
+    ``audial.lyrics`` is this module and the lyrics add-on at once:
+    ``audial.lyrics(analysis_id)`` returns an analysed track's lyrics with word
+    timings, while ``audial.lyrics.parse_per_note_lyrics`` and the rest of the
+    per-note grammar stay where they were.
+    """
+
+    def __call__(self, analysis_id: str, **kwargs: Any) -> Any:
+        from audial.functions.lyrics import lyrics as lyrics_addon
+
+        return lyrics_addon(analysis_id, **kwargs)
+
+
+sys.modules[__name__].__class__ = _LyricsModule

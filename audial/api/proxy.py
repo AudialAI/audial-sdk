@@ -14,6 +14,8 @@ from urllib3.util.retry import Retry
 
 from audial.api.constants import (
     EXECUTION_STATE_COMPLETED,
+    FUNCTION_SEGMENTATION,
+    FUNCTION_STEM_SPLITTER,
     EXECUTION_STATE_FAILED,
     DEFAULT_POLLING_INTERVAL,
     FUNCTION_SOUND2VITAL,
@@ -93,19 +95,25 @@ def _pipeline_response(response: "requests.Response", context: str) -> Dict[str,
 
     if response.status_code >= 400:
         message = f"{context}: HTTP {response.status_code}"
+        code = None
         try:
             error_data = response.json()
         except ValueError:
             error_data = None
         if isinstance(error_data, dict):
             detail = error_data.get("error") or error_data.get("message")
-            code = error_data.get("code")
+            code = error_data.get("code") if isinstance(error_data.get("code"), str) else None
             if detail:
                 message = f"{context}: {detail}"
             if code:
                 message = f"{message} ({code})"
+        elif error_data is None:
+            # Some routes answer a failure in plain text; keep a short one.
+            text = (getattr(response, "text", "") or "").strip()
+            if text and len(text) <= 300:
+                message = f"{context}: {text}"
         raise AudialAPIError(
-            message, status_code=response.status_code, response=response
+            message, status_code=response.status_code, response=response, code=code
         )
 
     try:
@@ -1239,7 +1247,7 @@ class AudialProxy:
             melody_audio_file (Dict[str, Any], optional): {"filename", "url"}
                 for uploaded override melody audio.
             word_timestamps_file (Dict[str, Any], optional): {"filename",
-                "url"} for uploaded Whisper word-timestamps JSON.
+                "url"} for an uploaded word-timestamps JSON.
             cfg_strength (float, optional)
             nfe_steps (int, optional)
             pitch_shift (float, optional)
@@ -1518,8 +1526,158 @@ class AudialProxy:
         except requests.exceptions.RequestException as e:
             raise AudialAPIError(f"Request error: {str(e)}")
     # -----------------------------------------------------------------
-    # Pipelines: multi-step jobs (stem split -> sample pack/segmentation)
-    # run and tracked server-side as a single job.
+    # The analysis and its add-ons (SDK 1.6)
+    # -----------------------------------------------------------------
+
+    def run_analysis(
+        self,
+        file_path: str,
+        segmentation_parameters: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Start an analysis of a local file: POST /functions/run/segmentation.
+
+        One multipart request carries the mix as the `original` part and
+        `segmentationParameters` ({genre?, edm?}) as a JSON form field. The API
+        creates the analysis execution and answers it once the analysis has
+        either finished or is still running in the background (state
+        "processing"); poll get_execution with its exeId in that case.
+
+        Args:
+            file_path (str): Local audio file (the mix; no stems needed).
+            segmentation_parameters (Dict[str, Any], optional): genre and edm.
+
+        Returns:
+            Dict[str, Any]: The analysis execution.
+
+        Raises:
+            SubscriptionRequiredError: HTTP 402.
+            AudialAuthError: HTTP 401/403.
+            AudialAPIError: Any other error, with the API's `code`.
+        """
+        if not os.path.isfile(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        user_id = get_user_id(self.api_key)
+        url = f"{self.base_url}/functions/run/{FUNCTION_SEGMENTATION}"
+        headers = get_auth_headers(self.api_key)
+        # Content-Type is set by requests for the multipart body.
+        headers.pop("Content-Type", None)
+
+        fields: List[Tuple[str, str]] = [("userId", user_id)]
+        if segmentation_parameters:
+            fields.append(("segmentationParameters", json.dumps(segmentation_parameters)))
+
+        filename = os.path.basename(file_path)
+        with open(file_path, "rb") as f:
+            files = {"original": (filename, f, get_mime_type(file_path))}
+            try:
+                # The API answers once the analysis finished or went to the
+                # background (about 90 s at most), so the timeout is generous.
+                response = self.session.post(
+                    url, headers=headers, data=fields, files=files, timeout=300
+                )
+            except requests.exceptions.Timeout:
+                raise AudialAPIError(
+                    "The analysis request timed out before the API answered. The analysis may "
+                    "still finish: it is listed in your history at audialmusic.ai."
+                )
+            except requests.exceptions.RequestException as e:
+                raise AudialAPIError(f"Request error: {str(e)}")
+
+        return _pipeline_response(response, "Analysis could not be started")
+
+    def run_addon(
+        self,
+        function_name: str,
+        analysis_exe_id: str,
+        rerun: bool = False,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Start an add-on on an analysis: POST /functions/run/{function_name}
+        with {userId, analysisExeId}.
+
+        Add-on runs are free on an analysis you own, and idempotent: while the
+        add-on is queued, running or completed, the API answers that run
+        instead of starting another (`rerun=True` starts a new one).
+
+        Args:
+            function_name (str): "audio-features", "audio-tags", "lyrics" or
+                "sample-pack".
+            analysis_exe_id (str): The analysis's exeId (a pipeline id works
+                for analyses made by a pipeline before the add-ons existed).
+            rerun (bool, optional): Start a new run even if one exists.
+            extra (Dict[str, Any], optional): More body fields, e.g.
+                {"samplePackParameters": {"components": [...]}}.
+
+        Returns:
+            Dict[str, Any]: {exeId, analysisExeId, addon, state}.
+
+        Raises:
+            AudialAPIError: 409 with code STEMS_NOT_READY (the track is still
+                being prepared; `state` in the body says how far) or
+                ADDON_UNAVAILABLE; 404 EXECUTION_NOT_FOUND; anything else.
+        """
+        body: Dict[str, Any] = {
+            "userId": get_user_id(self.api_key),
+            "analysisExeId": analysis_exe_id,
+        }
+        if rerun:
+            body["rerun"] = True
+        if extra:
+            body.update(extra)
+        return self._post_json(
+            f"/functions/run/{function_name}", body, f"{function_name} could not be started"
+        )
+
+    def retry_stems(self, analysis_exe_id: str) -> Dict[str, Any]:
+        """
+        Prepare an analysis's track again after it failed:
+        POST /functions/run/stem-splitter with {userId, analysisExeId}. Free.
+
+        Returns:
+            Dict[str, Any]: {exeId, analysisExeId, addon: "stems", state}.
+        """
+        body = {"userId": get_user_id(self.api_key), "analysisExeId": analysis_exe_id}
+        return self._post_json(
+            f"/functions/run/{FUNCTION_STEM_SPLITTER}", body, "The track could not be prepared again"
+        )
+
+    def get_analysis_view(self, exe_id: str) -> Dict[str, Any]:
+        """
+        An analysis with every add-on result so far:
+        GET /db/{userId}/execution/{exeId}/analysis.
+
+        Returns:
+            Dict[str, Any]: {"audio_segmentation": {...}}. `song_analysis` and
+                `segment_analysis` (one object per section) are always there.
+
+        Raises:
+            AudialAPIError: 409 ANALYSIS_NOT_READY before the analysis has a
+                result, 502 when the result could not be read (try again), 404.
+        """
+        user_id = get_user_id(self.api_key)
+        url = f"{self.base_url}/db/{user_id}/execution/{exe_id}/analysis"
+        headers = get_auth_headers(self.api_key)
+        try:
+            response = self.session.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
+        except requests.exceptions.RequestException as e:
+            raise AudialAPIError(f"Request error: {str(e)}")
+        return _pipeline_response(response, f"Failed to get analysis {exe_id}")
+
+    def _post_json(self, path: str, body: Dict[str, Any], context: str) -> Dict[str, Any]:
+        url = f"{self.base_url}{path}"
+        headers = get_auth_headers(self.api_key)
+        try:
+            response = self.session.post(url, headers=headers, json=body, timeout=REQUEST_TIMEOUT)
+        except requests.exceptions.RequestException as e:
+            raise AudialAPIError(f"Request error: {str(e)}")
+        return _pipeline_response(response, context)
+
+    # -----------------------------------------------------------------
+    # Pipelines: multi-step jobs (the analysis, then its add-ons or a
+    # sample pack) run and tracked server-side as a single job.
     # -----------------------------------------------------------------
 
     def create_pipeline(

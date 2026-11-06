@@ -11,10 +11,18 @@ class AudialAuthError(AudialError):
     pass
 
 class AudialAPIError(AudialError):
-    """Exception raised for API errors."""
-    def __init__(self, message, status_code=None, response=None):
+    """
+    Exception raised for API errors.
+
+    `status_code` is the HTTP status (None for a transport error) and `code`
+    the API's machine-readable error code when it sent one, e.g.
+    "STEMS_NOT_READY" or "ADDON_UNAVAILABLE" (both HTTP 409, from the analysis
+    add-ons), "INVALID_INPUT" or "SUBSCRIPTION_REQUIRED".
+    """
+    def __init__(self, message, status_code=None, response=None, code=None):
         self.status_code = status_code
         self.response = response
+        self.code = code
         super().__init__(message)
 
 class SubscriptionRequiredError(AudialAPIError):
@@ -33,6 +41,7 @@ class SubscriptionRequiredError(AudialAPIError):
             ),
             status_code=402,
             response=response,
+            code="SUBSCRIPTION_REQUIRED",
         )
 
 

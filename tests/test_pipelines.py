@@ -403,38 +403,35 @@ def test_generate_samples_still_validates_before_calling_the_api(audio_file, tmp
     run.assert_not_called()
 
 
-def test_segment_runs_the_segmentation_pipeline_and_parses_the_pruned_json(audio_file, tmp_path):
-    def fake_download(url, dest):
-        with open(dest, "w") as f:
-            f.write('{"audio_segmentation": [{"label": "intro", "start": 0}]}')
-        return dest
-
+def test_segment_with_features_runs_the_segmentation_pipeline(audio_file, tmp_path):
+    view = {"audio_segmentation": {"format_version": 4, "sections": [{"label": "INTRO", "start": 0}],
+                                   "song_analysis": {"energy": 0.5}, "segment_analysis": [{}]}}
     with mock.patch(
         "audial.pipelines.run", return_value=_completed_segmentation()
-    ) as run, mock.patch(
-        "audial.functions.segment.download_file", side_effect=fake_download
-    ):
-        result = segment(audio_file, genre="House", results_folder=str(tmp_path))
+    ) as run, mock.patch.object(AudialProxy, "get_analysis_view", return_value=view) as get_view:
+        result = segment(audio_file, genre="House", features=["energy", "tags"],
+                         results_folder=str(tmp_path), expand_beats=False)
 
     assert run.call_args.args[0] == "segmentation"
     options = run.call_args.kwargs["options"]
     assert options["genre"] == "House"
-    assert options["components"] == ["bass", "beat", "melody", "vocal"]
-    assert "tags" in options["featuresToExtract"]
+    assert options["featuresToExtract"] == ["energy", "tags"]
 
-    # Only the pruned analysis JSON is downloaded, as before.
-    assert list(result["files"]["files"]) == ["pruned_audio_segmentation.json"]
-    assert result["segmentation"] == [{"label": "intro", "start": 0}]
+    # The merged view of the analysis step's execution is what comes back.
+    get_view.assert_called_once_with("exe-seg")
+    assert result["analysis_id"] == "exe-seg"
+    assert result["segmentation"] == view["audio_segmentation"]
     assert result["execution"]["state"] == "completed"
+    assert list(result["files"]["files"]) == ["analysis.json"]
     assert result["files"]["folder"].endswith("_segmentation")
 
 
-def test_segment_raises_when_the_pipeline_returned_no_segmentation(audio_file, tmp_path):
-    empty = dict(_completed_segmentation(), outputs={"stems": {}})
+def test_segment_raises_when_the_pipeline_names_no_analysis(audio_file, tmp_path):
+    nothing = dict(_completed_segmentation(), steps=[], outputs={"stems": {}})
 
-    with mock.patch("audial.pipelines.run", return_value=empty):
+    with mock.patch("audial.pipelines.run", return_value=nothing):
         with pytest.raises(AudialError) as excinfo:
-            segment(audio_file, results_folder=str(tmp_path))
+            segment(audio_file, features=["energy"], results_folder=str(tmp_path))
 
     assert "did not produce expected results" in str(excinfo.value)
 

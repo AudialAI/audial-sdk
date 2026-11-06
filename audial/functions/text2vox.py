@@ -69,7 +69,7 @@ def text2vox(
         melody_audio_file: Path to override melody audio. Required unless
             midi_file is given. When set, strict-pitch synthesis is skipped
             by the worker.
-        word_timestamps_file: Path to a Whisper word-timestamps JSON for the
+        word_timestamps_file: Path to a word-timestamps JSON for the
             source stem, used by auto-align.
         lyrics_mode: "auto" (default) matches word count to the MIDI note
             count and auto-aligns via word_timestamps; "per_note" expects
@@ -77,7 +77,7 @@ def text2vox(
             audial.lyrics for the grammar); "1to1" passes lyrics straight
             through.
         reference_text: What is said in the reference clip.
-        cfg_strength: Worker synthesis option; see text2vox-runpod defaults.
+        cfg_strength: Worker synthesis option.
         nfe_steps: Worker synthesis option.
         pitch_shift: Worker synthesis option.
         strict_pitch: Render the melody as a synthetic line the engine listens
