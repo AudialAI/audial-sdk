@@ -319,7 +319,7 @@ returns it:
 
 ```python
 features = audial.audio_features(analysis_id)  # energy, danceability, loudness, mode, key
-tags = audial.tags(analysis_id)                # genre, moods, instruments, artist tags
+tags = audial.tags(analysis_id)                # genre, moods, instruments, artist tags, description
 lyrics = audial.lyrics(analysis_id)            # text, timed lines, word timings
 pack = audial.generate_samples(analysis_id=analysis_id)   # drums, bass and melody loops
 

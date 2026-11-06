@@ -1,6 +1,6 @@
 """
-Tags of an analysis: genre, moods and instruments, for the whole track and for
-its bass and melody.
+Tags of an analysis: genre, moods and instruments for the whole track and for
+each of its parts, artist tags and a written description.
 """
 
 from typing import Any, Callable, Dict, Optional
@@ -10,7 +10,9 @@ from audial.api.constants import (
     ADDON_DEFAULT_POLL_INTERVAL,
     ADDON_DEFAULT_WAIT_S,
 )
-from audial.functions._addon import addon_result
+from audial.api.proxy import AudialProxy
+from audial.functions import _addon
+from audial.functions.segment import _fetch_view
 
 
 def tags(
@@ -24,11 +26,12 @@ def tags(
     on_progress: Optional[Callable[[Dict[str, Any]], Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Get the tags of an analysed track: genre, moods, instruments and artist tags.
+    Get the tags of an analysed track: genre, moods, instruments and artist tags for
+    the mix and each part, plus a written description.
 
     Prerequisites: an analysis (``audial.segment()``) and its stems. Every
     analysis makes its stems in the background as soon as it starts (the
-    bass and melody stems are what this reads), so there is nothing to do;
+    drums, bass, melody and vocals stems are what this reads), so there is nothing to do;
     until they are ready the API answers ``409 STEMS_NOT_READY`` ("This track is still being
     prepared. Try again in a minute.") and this function keeps trying for up to
     ``wait_s`` seconds. If making the stems failed, it is started again once.
@@ -59,22 +62,27 @@ def tags(
             starts (see ``audial.warmup``).
 
     Returns:
-        Dict[str, Any]: The tags::
+        Dict[str, Any]: The tags, exactly as the Audial website shows them::
 
             {
-              "tags_version": 1,
-              "genre": ["Electronic---Tech House", ...],   # show the part after "---"
+              "genre": ["UK Garage", "Speed Garage"],      # use as they are
               "song_tags": {
-                "full":   {"moods": [...], "instruments": [...],
-                           "artist_tags": [...], "extra_tags": [...]},
-                "bass":   {"moods": [...], "instruments": [...]},
-                "melody": {"moods": [...], "instruments": [...]}
+                "full":   {"moods": [...], "instruments": [...], "artist_tags": [...]},
+                "drums":  {"moods": [...], "instruments": [...], "silent": False},
+                "bass":   {"moods": [...], "instruments": [...], "silent": False},
+                "melody": {"moods": [...], "instruments": [...], "silent": False},
+                "vocals": {"moods": [...], "instruments": [...], "silent": False}
               },
-              "source": {...},     # where the title and artist came from, for support
+              "description": "A driving UK garage cut ...",   # "" when none was made
               "warnings": []
             }
 
-        Every list is present (empty when nothing was found).
+        There are five parts: ``full`` (the mix), ``drums``, ``bass``, ``melody``
+        and ``vocals``. ``artist_tags`` belong to the mix. A part whose stem is
+        silent has ``"silent": True`` and empty lists (for ``vocals``: no vocals
+        in the track). An analysis made before the drums and vocals were tagged
+        has the first three parts only, and no description. Lists that exist are
+        always lists (empty when nothing was found).
 
     Raises:
         AudialAPIError: ``code == "STEMS_NOT_READY"`` when the stems are still
@@ -84,5 +92,21 @@ def tags(
             failed; or the API returned another error.
         AudialAuthError: If the credentials are rejected.
     """
-    return addon_result("tags", analysis_id, rerun, wait_s, max_wait, poll_interval,
-                        results_folder, api_key, on_progress)
+    analysis_exe_id, record, run = _addon.run_addon(
+        "tags", analysis_id, rerun=rerun, wait_s=wait_s, max_wait=max_wait,
+        poll_interval=poll_interval, on_progress=on_progress, api_key=api_key,
+    )
+    # The values the website shows come from the merged view; the record has the warnings.
+    view = _fetch_view(AudialProxy(api_key), analysis_exe_id, poll_interval)
+    data = view.get("audio_segmentation") if isinstance(view.get("audio_segmentation"), dict) else {}
+    song = data.get("song_analysis") if isinstance(data.get("song_analysis"), dict) else {}
+    stored = run.get("result") if isinstance(run.get("result"), dict) else {}
+    result = _addon.normalize_result("tags", {
+        "genre": song.get("genre"),
+        "song_tags": song.get("song_tags"),
+        "description": song.get("description"),
+        "warnings": stored.get("warnings"),
+    })
+    path = _addon.save_result("tags", analysis_exe_id, result, results_folder)
+    print(f"{_addon.LABELS['tags']} saved to {path}")
+    return result

@@ -674,12 +674,18 @@ def _print_features(result: Dict[str, Any]) -> None:
 
 
 def _print_tags(result: Dict[str, Any]) -> None:
-    genres = [g.split("---")[-1] for g in result.get("genre") or []]
-    print(f"Genre: {', '.join(genres) or '-'}")
+    if result.get("description"):
+        print(result["description"])
+    print(f"Genre: {', '.join(result.get('genre') or []) or '-'}")
     song_tags = result.get("song_tags") or {}
-    for part, label in (("full", "Song"), ("bass", "Bass"), ("melody", "Melody")):
+    for part, label in (("full", "Song"), ("drums", "Drums"), ("bass", "Bass"),
+                        ("melody", "Melody"), ("vocals", "Vocals")):
         tags_of = song_tags.get(part) or {}
-        for name in ("moods", "instruments", "artist_tags", "extra_tags"):
+        if tags_of.get("silent"):
+            note = INSTRUMENTAL_TEXT if part == "vocals" else "No " + label.lower() + " in this track."
+            print(f"{label}: {note}")
+            continue
+        for name in ("moods", "instruments", "artist_tags"):
             values = tags_of.get(name) or []
             if values:
                 print(f"{label} {name.replace('_', ' ')}: {', '.join(values)}")
