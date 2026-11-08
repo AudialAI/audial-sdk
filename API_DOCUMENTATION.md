@@ -932,6 +932,8 @@ subscription in addition to a valid API key (see [Error Handling](#error-handlin
 Exactly one of `midi_file` / `melody_audio_file` must be given -- the underlying worker
 needs one of the two to drive the melody.
 
+text2vox sings one note at a time: the MIDI must be a single melody line, not chords or harmony. Two notes that start together (a chord), or a note that starts more than 50 ms before the previous one ends, is refused before anything runs (HTTP 400, `MELODY_INVALID`, or `LYRICS_INVALID` with `per_note`), naming the note number and its time; nothing runs and nothing is charged. Overlaps of 50 ms or less are trimmed automatically. With `per_note`, a note with no length (usually one stacked on another note of the same pitch) or a note that never ends is refused too.
+
 #### Function Signature
 
 ```python
@@ -965,7 +967,7 @@ audial.text2vox(
 |-----------|------|----------|---------|-------------|
 | `reference_file` | str | Yes | - | Path to a short (5-10s) reference voice clip -- the voice to sing in |
 | `lyrics` | str | Yes | - | The lyrics to sing. In `per_note` mode this is pipe-delimited, one token per MIDI note -- see [Per-note lyrics](#per-note-lyrics) |
-| `midi_file` | str | One of midi_file/melody_audio_file | `None` | Path to a MIDI file driving the melody |
+| `midi_file` | str | One of midi_file/melody_audio_file | `None` | Path to a MIDI file driving the melody: one note at a time, a single melody line, not chords or harmony |
 | `melody_audio_file` | str | One of midi_file/melody_audio_file | `None` | Path to override melody audio (skips strict-pitch synthesis) |
 | `word_timestamps_file` | str | No | `None` | Path to a word-timestamps JSON, used by auto-align |
 | `lyrics_mode` | str | No | `"auto"` | `"auto"` (word count matches MIDI notes, auto-aligns via word_timestamps), `"per_note"` (pipe-delimited, one token per note -- see [Per-note lyrics](#per-note-lyrics)), or `"1to1"` (passed straight through) |
@@ -1589,7 +1591,7 @@ audial sound2serum path/to/clip.wav --api-key your_custom_api_key
 ### text2vox Commands
 
 Requires an active Audial subscription. Exactly one of `--midi` / `--melody-audio` must be
-given.
+given. The MIDI must be one note at a time: a single melody line, not chords or harmony.
 
 #### Driven by a MIDI File
 

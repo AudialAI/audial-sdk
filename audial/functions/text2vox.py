@@ -55,6 +55,12 @@ def text2vox(
     Exactly one of midi_file / melody_audio_file must be provided -- the
     worker needs one to drive the melody.
 
+    text2vox sings one note at a time: a midi_file must be a single melody
+    line, not chords or harmony. Two notes that start together, or a note
+    that starts more than 50 ms before the previous one ends, is refused
+    before anything runs (HTTP 400, nothing is charged). Overlaps of 50 ms
+    or less are trimmed automatically.
+
     Args:
         reference_file: Path to a short (5-10s) reference voice clip -- the
             voice to sing in. A clip over 20 s is cut to its loudest 8 s before
@@ -64,7 +70,8 @@ def text2vox(
             empty token) holds the previous syllable through this note:
             "amazing|-|-|grace|-|how|sweet|the|sound". See audial.lyrics; it
             is validated here, before anything is uploaded.
-        midi_file: Path to a MIDI file driving the melody. Required unless
+        midi_file: Path to a MIDI file driving the melody: one note at a
+            time, a single melody line, not chords or harmony. Required unless
             melody_audio_file is given.
         melody_audio_file: Path to override melody audio. Required unless
             midi_file is given. When set, strict-pitch synthesis is skipped

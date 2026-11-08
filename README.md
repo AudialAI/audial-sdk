@@ -524,6 +524,9 @@ result = audial.text2vox(
 )
 ```
 
+The MIDI must be one note at a time: a single melody line, not chords or harmony. A file with
+chords or overlapping notes is refused before anything runs, and nothing is charged.
+
 #### Per-note lyrics
 
 `lyrics_mode="per_note"` gives you a syllable per MIDI note: the lyrics are pipe-delimited,
