@@ -215,12 +215,15 @@ def setup_generate_music_parser(subparsers):
                        help='Source audio file path (required for remix/lego/understand)')
     parser.add_argument('--reference', '-r', dest='reference_file', default=None,
                        help='Reference audio file path (required for cover mode)')
-    parser.add_argument('--lyrics', '-l', default=None, help='Song lyrics')
+    parser.add_argument('--lyrics', '-l', default=None,
+                       help='Song lyrics. Leave out (without --instrumental) and Audial writes '
+                            'them from the prompt')
     parser.add_argument('--bpm', type=int, default=None, help='Target BPM')
     parser.add_argument('--key', dest='key_scale', default=None,
                        help="Musical key (e.g. 'C major')")
     parser.add_argument('--duration', dest='audio_duration', type=float, default=None,
-                       help='Duration in seconds (10-600)')
+                       help='Length in seconds, up to 360. Without it the length follows '
+                            'the lyrics')
     parser.add_argument('--batch-size', '-b', type=int, default=1,
                        help='Number of variations to generate (1-8, default: 1)')
     parser.add_argument('--format', '-f', dest='audio_format', default='mp3',
@@ -236,7 +239,7 @@ def setup_generate_music_parser(subparsers):
     parser.add_argument('--cover-strength', dest='audio_cover_strength', type=float, default=None,
                        help='Cover/remix fidelity to original (0.0-1.0)')
     parser.add_argument('--track-name', default=None,
-                       help='Track to extract/replace (extract/lego modes)')
+                       help='Track to emphasise (lego mode)')
     parser.add_argument('--negative-prompt', default=None,
                        help='Text describing what to avoid')
     parser.add_argument('--results-folder', help='Folder to save results (uses default if not specified)')

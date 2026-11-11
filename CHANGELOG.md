@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.7.1
+
+- `generate_music()` now returns the run's generation metadata in `result["metadata"]`. Until
+  now it was always `{}`: the SDK looked for it under `analysis`, where the API doesn't store it.
+- When you leave out the lyrics for text to music (and `instrumental` is False), Audial writes
+  lyrics from your prompt and sings them. They come back in
+  `result["metadata"]["written_lyrics"]`, and `generate_music()` prints them. Before, the
+  vocals had no words. Pass `instrumental=True` for no vocals.
+- `result["metadata"]["audio_seconds"]` has the length of each file.
+- Docs: `audio_duration` goes up to 360 s (not 600); longer values are capped. Without it the
+  length follows the lyrics, and a cover follows its reference.
+
 ## 1.7.0
 
 - `audial.tags()` returns the tags exactly as the Audial website shows them: `genre` (display

@@ -972,11 +972,14 @@ class AudialProxy:
             exe_id: The execution ID.
             task_type: One of text2music, cover, remix, lego, understand.
             prompt: Text describing the desired music.
-            lyrics: Song lyrics (for vocal generation).
+            lyrics: Song lyrics. For text2music, leaving them out (with instrumental
+                False) makes Audial write lyrics from the prompt; they come back in the
+                run's generation_metadata.written_lyrics.
             bpm: Target BPM.
             key_scale: Musical key, e.g. "C major".
             time_signature: e.g. "4/4".
-            audio_duration: Duration in seconds (10-600).
+            audio_duration: Length in seconds, up to 360 (longer values are capped).
+                Without it, the length follows the lyrics (or a cover's reference).
             vocal_language: Language code for vocals (default "en").
             reference_file: Dict with filename/url for cover mode.
             source_file: Dict with filename/url for remix/lego/understand.
@@ -988,8 +991,8 @@ class AudialProxy:
             inference_steps: Diffusion steps (8=turbo, 50=standard).
             guidance_scale: Classifier-free guidance scale (1.0-15.0).
             audio_format: Output format (mp3, flac, wav, opus, aac).
-            track_name: Track to extract/replace (for extract/lego modes).
-            track_classes: Instrument classes to generate (for complete mode).
+            track_name: Track to emphasise (lego mode).
+            track_classes: Ignored; no current mode uses it.
             instrumental: If True, generate without vocals.
             negative_prompt: Text describing what to avoid.
 

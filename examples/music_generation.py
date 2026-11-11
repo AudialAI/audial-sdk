@@ -9,6 +9,12 @@ result = audial.generate_music(
     audio_format="mp3",
 )
 print(f"Generated files: {list(result['files']['files'].keys())}")
+# No lyrics were given and instrumental is False, so Audial wrote lyrics from the prompt.
+print(result["metadata"].get("written_lyrics"))
+
+# Your own lyrics, or no vocals at all
+# result = audial.generate_music(prompt="lofi hip hop", lyrics="[Verse]\n...", audio_duration=90)
+# result = audial.generate_music(prompt="lofi hip hop", instrumental=True, audio_duration=90)
 
 # Cover mode (requires source audio)
 # result = audial.generate_music(
