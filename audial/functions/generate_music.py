@@ -23,6 +23,22 @@ from audial.utils.config import get_results_folder
 from audial.utils.file_utils import download_file
 
 
+def _generation_metadata(exe_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The run's generation metadata, or None when the record doesn't have it yet.
+
+    The API stores it at the top level of the execution record; older records kept it under
+    ``analysis``.
+    """
+    meta = exe_data.get("generation_metadata")
+    if not isinstance(meta, dict):
+        analysis = exe_data.get("analysis")
+        meta = analysis.get("generation_metadata") if isinstance(analysis, dict) else None
+    if not isinstance(meta, dict):
+        return None
+    inner = meta.get("metadata")
+    return inner if isinstance(inner, dict) else meta
+
+
 def generate_music(
     prompt: str,
     task_type: str = "text2music",
@@ -59,13 +75,19 @@ def generate_music(
         prompt: Text describing desired music style, mood, genre.
         task_type: Generation mode -- one of:
             text2music, cover, remix, lego, understand
-        lyrics: Song lyrics for vocal generation (ignored if instrumental=True).
+        lyrics: Song lyrics, with optional section tags like [Verse] and [Chorus]. Ignored
+            when instrumental=True. For text2music, leaving them out (with
+            instrumental=False) makes Audial write lyrics from the prompt, sized to the
+            length; they come back in result["metadata"]["written_lyrics"]. Pass
+            instrumental=True for no vocals.
         source_file: Path to source audio (required for remix/lego/understand).
         reference_file: Path to reference audio (required for cover mode).
         bpm: Target beats per minute.
         key_scale: Target musical key (e.g. "C major", "A minor").
         time_signature: Time signature (e.g. "4/4", "3/4").
-        audio_duration: Duration in seconds (10-600).
+        audio_duration: Length in seconds, up to 360 (longer values are capped). Text to
+            music ends close to it. Without it, the length follows the lyrics, and a cover
+            follows the reference's length.
         vocal_language: Language code (e.g. "en", "zh", "ja"). Default "en".
         audio_cover_strength: 0.0-1.0, fidelity to original (cover/remix modes).
         repainting_start: Start time for remix in seconds.
@@ -75,9 +97,9 @@ def generate_music(
         inference_steps: Diffusion steps. 8 = turbo (fast), 50 = standard (quality).
         guidance_scale: Classifier-free guidance. Higher = more prompt-adherent.
         audio_format: Output format -- mp3, flac, wav, opus, or aac.
-        track_name: Track to extract/replace (extract/lego modes).
+        track_name: Track to emphasise in lego mode.
             Options: vocals, drums, bass, guitar, piano, strings, synth, other
-        track_classes: Instrument classes for complete mode.
+        track_classes: Ignored; no current mode uses it.
         instrumental: If True, generate without vocals.
         negative_prompt: Text describing what to avoid.
         results_folder: Where to save output files. Default: audial_results/
@@ -93,6 +115,9 @@ def generate_music(
         dict with keys:
             execution: Full execution record from the API.
             files: {folder, files} dict of downloaded output paths.
+            metadata: The run's generation metadata, {} when there is none. Includes
+                written_lyrics (when Audial wrote the lyrics), audio_seconds (the length
+                of each file), seed_values, bpm and key_scale.
             caption_result: (understand mode only) Analysis data.
     """
     # Validate task type
@@ -229,6 +254,18 @@ def generate_music(
         print("Caption result retrieved.")
         return result
 
+    # The API writes the files and the generation metadata at the same moment, so the poll
+    # that saw the files may have come just before the metadata. Read the record once more.
+    metadata = _generation_metadata(exe_data)
+    if metadata is None:
+        time.sleep(2)
+        try:
+            exe_data = proxy.get_execution(exe_id)
+            result["execution"] = exe_data
+            metadata = _generation_metadata(exe_data)
+        except Exception:
+            pass
+
     # Handle generation tasks -- download generated audio files
     generated = exe_data.get("generated", {})
     if generated:
@@ -244,11 +281,11 @@ def generate_music(
                 download_file(file_info["url"], output_path)
                 result["files"]["files"][filename] = output_path
 
-    # Include generation metadata if available
-    analysis = exe_data.get("analysis", {})
-    gen_metadata = analysis.get("generation_metadata", {})
-    if isinstance(gen_metadata, dict):
-        result["metadata"] = gen_metadata.get("metadata", gen_metadata)
+    result["metadata"] = metadata or {}
+    written = result["metadata"].get("written_lyrics")
+    if written:
+        print("No lyrics were given, so Audial wrote these from your prompt:")
+        print(written)
 
     print(f"Done! {len(result['files']['files'])} file(s) saved to {result['files'].get('folder')}")
     return result
