@@ -147,6 +147,7 @@ def _start(
             body = _body(exc)
             state = body.get("state")
             pause = poll_interval
+            retry_after = 0
 
             if exc.status_code == 409 and exc.code == ERROR_STEMS_NOT_READY:
                 give_up = AudialAPIError(
@@ -185,6 +186,10 @@ def _start(
                 if transient > MAX_TRANSIENT_ERRORS:
                     raise
                 pause = min(poll_interval * transient, 60)
+                if exc.retry_after:
+                    # The API said how long to wait: wait at least that long.
+                    pause = max(pause, exc.retry_after)
+                    retry_after = exc.retry_after
                 give_up = exc
             else:
                 raise
@@ -192,7 +197,7 @@ def _start(
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise give_up
-        time.sleep(min(pause, remaining))
+        time.sleep(max(min(pause, remaining), retry_after))
 
 
 def _wait(

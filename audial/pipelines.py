@@ -149,7 +149,7 @@ def run(
             if not _is_transient(exc) or transient >= MAX_TRANSIENT_POLL_ERRORS:
                 raise
             transient += 1
-            time.sleep(min(poll_interval * transient, 60))
+            time.sleep(max(min(poll_interval * transient, 60), exc.retry_after or 0))
             continue
         transient = 0
         _notify(on_progress, status)

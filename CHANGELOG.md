@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.8.0
+
+- New `AudialLimitReached` (a subclass of `AudialAPIError`), raised when the account has used
+  all its API calls for the month (HTTP 402, code `API_LIMIT_REACHED`). It has `limit`, `used`,
+  `resets_at` (a UTC `datetime`) and `upgrade_url`, and its message is one line, e.g.
+  "Monthly API limit reached (100/100). Resets 2026-12-23. More calls: https://audialmusic.ai/product/pricing".
+  It is final until the reset, so the SDK makes one request and does not retry. The free
+  allowance running out is still `SubscriptionRequiredError`.
+- A 429 (5 calls a minute per account) now waits at least as long as the `Retry-After` header
+  says before the SDK retries; without the header the old backoff applies.
+- New `audial.usage()` returns the `api` block of `/functions/allowance`: `plan`,
+  `monthlyLimit`, `used`, `remaining`, `topupRemaining`, `resetsAt` (ms). `None` if absent.
+
 ## 1.7.1
 
 - `generate_music()` now returns the run's generation metadata in `result["metadata"]`. Until

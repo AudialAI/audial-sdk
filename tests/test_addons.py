@@ -794,7 +794,7 @@ def test_status_names_cover_the_add_ons():
 
 
 def test_version():
-    assert audial.__version__ == "1.7.1"
+    assert audial.__version__ == "1.8.0"
 
 
 def test_segment_keeps_the_15_positional_order():

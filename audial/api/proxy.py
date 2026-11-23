@@ -30,6 +30,7 @@ from audial.api.exceptions import (
     AudialAPIError,
     AudialAuthError,
     AudialError,
+    AudialLimitReached,
     AudialValidationError,
     SubscriptionRequiredError,
 )
@@ -39,21 +40,35 @@ from audial.utils.config import get_user_id
 
 def _check_subscription_required(response: "requests.Response") -> None:
     """
-    Raise SubscriptionRequiredError if the API refused the request with
-    HTTP 402 / code SUBSCRIPTION_REQUIRED. No-op for any other status code.
+    Raise for an HTTP 402. Code API_LIMIT_REACHED (the month's API calls are
+    used up) raises AudialLimitReached; any other 402 is the free allowance
+    running out and raises SubscriptionRequiredError. No-op for any other
+    status code.
+
+    Every request path calls this before its retry logic, so a 402 is never
+    retried.
     """
     if response.status_code != 402:
         return
 
     message = None
+    body = None
     try:
-        error_data = response.json()
-        if isinstance(error_data, dict) and error_data.get("error"):
-            message = error_data["error"]
+        body = response.json()
+        if isinstance(body, dict) and body.get("error"):
+            message = body["error"]
     except (ValueError, KeyError):
         pass
 
+    if isinstance(body, dict) and body.get("code") == "API_LIMIT_REACHED":
+        raise AudialLimitReached.from_body(body, response=response)
+
     raise SubscriptionRequiredError(message, response=response)
+
+
+def _retry_after_of(response: "requests.Response") -> Optional[float]:
+    """The `Retry-After` header of a response in seconds, or None."""
+    return AudialAPIError("", response=response).retry_after
 
 
 def _pipeline_option_fields(options: Optional[Dict[str, Any]]) -> List[Tuple[str, str]]:
@@ -917,6 +932,8 @@ class AudialProxy:
                         last_error = f"API error: {response.status_code} - {response.text[:200]}"
                     if attempt < max_attempts - 1:
                         wait = 10 * (attempt + 1)
+                        if response.status_code == 429:
+                            wait = max(wait, _retry_after_of(response) or 0)
                         print(f"  MIDI generation error ({response.status_code}), retrying in {wait}s...")
                         time.sleep(wait)
                         continue
@@ -1440,6 +1457,16 @@ class AudialProxy:
             # Wait before next poll
             time.sleep(polling_interval)
     
+    def get_allowance(self) -> Dict[str, Any]:
+        """GET /functions/allowance: the account's allowance and API usage."""
+        url = f"{self.base_url}/functions/allowance"
+        headers = get_auth_headers(self.api_key)
+        try:
+            response = self.session.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
+        except requests.exceptions.RequestException as e:
+            raise AudialAPIError(f"Failed to get allowance: {str(e)}")
+        return _pipeline_response(response, "Failed to get allowance")
+
     def get_functions_status(self, function: Optional[str] = None) -> Dict[str, Any]:
         """
         Which functions have a worker awake: GET /functions/status.
