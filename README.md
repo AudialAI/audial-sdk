@@ -687,6 +687,7 @@ from audial.api.exceptions import (
     AudialAPIError,
     AudialValidationError,
     SubscriptionRequiredError,
+    AudialLimitReached,
 )
 
 try:
@@ -695,6 +696,10 @@ except AudialValidationError as e:
     print(f"Unusable input: {e} (position {e.position})")
 except SubscriptionRequiredError as e:
     print(f"Subscription required: {e}")
+except AudialLimitReached as e:
+    # Monthly API calls used up (HTTP 402 API_LIMIT_REACHED). Never retried.
+    print(e)  # Monthly API limit reached (100/100). Resets 2026-12-23. More calls: ...
+    print(e.limit, e.used, e.resets_at, e.upgrade_url)  # resets_at is a UTC datetime
 except AudialAuthError as e:
     print(f"Authentication error: {e}")
 except AudialAPIError as e:
