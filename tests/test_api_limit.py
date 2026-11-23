@@ -6,7 +6,6 @@ HTTP is mocked at requests.Session.get/post; the base URL points at a host
 that does not exist and sleeping is mocked.
 """
 
-import os
 from datetime import datetime, timezone
 from unittest import mock
 
