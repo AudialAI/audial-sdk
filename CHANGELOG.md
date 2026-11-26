@@ -1,5 +1,65 @@
 # Changelog
 
+## 2.0.0
+
+Analysis results are in analysis format 5, the same object the API serves and the website's JSON
+button saves: every fact appears once, every section carries its own numbers, nothing only
+means something inside Audial, and units are stated (times in seconds, `energy` and
+`danceability` 0 to 1, `loudness_lufs` in LUFS). Older analyses are served in format 5 too.
+This release breaks 1.x scripts that read analysis results; how to update one is below.
+
+- `segment()` returns `{analysis_id, analysis, execution, files, warnings?}`. `analysis` is the
+  format 5 merged view: `format_version` (5), `duration`, `bpm`, `tempo_mode`,
+  `time_signature`, `key`, `camelot`, `structure`, `bar1`, `grid`, `lead_in`, `sections`
+  (`label`, `start`, `end`, `start_bar`, `bars`, `fills`, and once audio features have run
+  `energy`, `danceability`, `loudness_lufs`), and once their add-on has run `features`, `tags`,
+  `description` and `lyrics`. The `audio_segmentation` and `segmentation` keys are gone.
+  `analysis.json` holds the format 5 object itself, with no wrapper.
+- `expand_beats` is now False by default, and no `FutureWarning` is shown. With
+  `expand_beats=True`, `analysis` also has `beat_times` and `bar_times`.
+- `audio_features()` returns `{key, camelot, features, sections, warnings}`: the analysis's key,
+  the `features` block (`energy`, `danceability`, `loudness_lufs`, `mode`, `mode_confidence`,
+  `tatum`) and each section's `label`, `start`, `end`, `energy`, `danceability` and
+  `loudness_lufs`.
+- `tags()` returns `{genres, instruments, moods, stems, description, warnings}`. A part of
+  `stems` (`drums`, `bass`, `melody`, `vocals`) is `{instruments, moods}`, or `{"silent": True}`
+  when that part is silent. Artist tags are gone.
+- `lyrics()` returns `{vocal_start, lines, warnings}`. `vocal_start` replaces
+  `first_vocal_beat_time`. `lyrics` (the text: the words of `lines` joined), `is_instrumental`
+  (no vocals: `vocal_start` is None and `lines` is empty), `segments` and `section_lyrics` are
+  gone.
+- The three add-ons read their values from the merged view, so they match `segment()` and the
+  website; `warnings` comes from the run.
+- `audial.grid.beats_of`, `beat_times`, `bar_times` and `expand` take a format 5 analysis (or the
+  whole `segment()` result) as well as a `grid`, a format 4 file (with or without its wrapper)
+  or a format 2/3 file. Beats per bar come from `time_signature` (4 when there is none); a
+  format 4 grid's `beats_per_bar` is still read. New `audial.grid.beats_per_bar()`.
+- `audial segment`, `audial features`, `audial tags` and `audial lyrics` print the new fields
+  (the key, loudness per section, genres and each part's tags, when the vocals start).
+
+### Updating a 1.x script
+
+| 1.x | 2.0 |
+|---|---|
+| `result["audio_segmentation"]`, `result["segmentation"]` | `result["analysis"]` |
+| `["mode"]` (dance or song) | `["structure"]` |
+| `["song_analysis"]["key"]` | `["key"]` (and `["camelot"]`) |
+| `["song_analysis"]["energy"]`, `danceability`, `mode`, `mode_confidence`, `tatum` | `["features"][...]` |
+| `["song_analysis"]["loudness"]` | `["features"]["loudness_lufs"]` |
+| `["segment_analysis"][i]["energy"]` | `["sections"][i]["energy"]` (`loudness` is `loudness_lufs`) |
+| `["song_analysis"]["genre"]`, `song_tags.full` | `["tags"]["genres"]`, `["tags"]["instruments"]`, `["tags"]["moods"]` |
+| `song_tags.<part>` | `["tags"]["stems"][part]` (`{"silent": True}` when silent) |
+| `["song_analysis"]["description"]` | `["description"]` |
+| `["song_analysis"]["lyrics_lines"]` | `["lyrics"]["lines"]` |
+| `["first_vocal_beat_time"]` | `["lyrics"]["vocal_start"]` |
+| `["song_start"]` | `["bar1"]` (`lead_in` covers the time before it) |
+| `phrases`, `mood`, `filtered_segments`, `segment_classifications`, `bar_analysis`, `timebase`, `mode_source`, artist tags | gone |
+| `grid["beats_per_bar"]` | `audial.grid.beats_per_bar(analysis)` (from `time_signature`) |
+| `beat_times`, `bar_times` (added by default) | `audial.grid.beats_of(result)`, or `expand_beats=True` |
+| `audio_features()["song"]` | `audio_features()["features"]`, with `["key"]` beside it |
+| `tags()["genre"]`, `tags()["song_tags"]` | `tags()["genres"]`, `["instruments"]`, `["moods"]`, `["stems"]` |
+| `lyrics()["first_vocal_beat_time"]`, `["is_instrumental"]`, `["lyrics"]` | `lyrics()["vocal_start"]`, `not lyrics()["lines"]`, the words of `lines` joined |
+
 ## 1.8.0
 
 - New `AudialLimitReached` (a subclass of `AudialAPIError`), raised when the account has used

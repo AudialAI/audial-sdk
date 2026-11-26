@@ -24,20 +24,20 @@ Every function requires an Audial account with an active subscription; without o
 
 The SDK supports both a Python API for integration into your projects and a command-line interface for direct use.
 
-> **What changed in 1.6**
+> **What changed in 2.0: analysis format 5**
 >
-> - Analysis is faster and needs only the mix: `audial.segment(path)` is one call that answers in
->   about half a minute and returns an `analysis_id`.
-> - Features, tags and lyrics are separate calls on an analysis: `audial.audio_features(id)`,
->   `audial.tags(id)`, `audial.lyrics(id)`. `segment(path, features=[...])` still runs them all
->   in one go, as before.
-> - Lyrics now come with word timings.
-> - Analysis files describe beats with a tempo map (`grid`); the SDK still returns `beat_times`
->   and `bar_times` (2.0 makes that opt-in; see `audial.grid`).
-> - Energy and danceability were rebuilt and now differ between tracks and sections. Loudness now
->   follows the broadcast standard over both channels and reads 3–6 LU higher than before.
+> - `audial.segment()` returns the analysis under `analysis`, in format 5: the same object the API
+>   and the website's JSON button give. Every fact appears once, every section carries its own
+>   numbers, the key is at the top level, and units are stated. The `audio_segmentation` and
+>   `segmentation` keys are gone. Older analyses come back in format 5 too.
+> - `audial.audio_features()`, `audial.tags()` and `audial.lyrics()` return their block of that
+>   object: `{key, camelot, features, sections}`, `{genres, instruments, moods, stems, description}`
+>   and `{vocal_start, lines}`.
+> - Gone: `song_analysis`, `segment_analysis`, `phrases`, artist tags, `first_vocal_beat_time`
+>   (now `lyrics.vocal_start`) and the other duplicates listed in the [changelog](CHANGELOG.md).
+> - `expand_beats` is False by default: read beats and bars with `audial.grid.beats_of(result)`.
 >
-> Everything is listed in the [changelog](CHANGELOG.md).
+> Everything is listed in the [changelog](CHANGELOG.md), with how to update a 1.x script.
 
 ## Installation
 
@@ -245,7 +245,7 @@ print(f"Key: {analysis['analysis']['key']}")
 
 # Song analysis: sections, tempo and bars in about half a minute...
 song = audial.segment("path/to/audio.mp3", genre="Tech House")
-for section in song["audio_segmentation"]["sections"]:
+for section in song["analysis"]["sections"]:
     print(section["label"], section["start"])
 
 # ...then audio features, tags and timed lyrics, one call each
@@ -295,18 +295,18 @@ print(f"Key: {analysis['analysis']['key']}")
 
 ### Song Analysis (Segmentation)
 
-Analysis finds your track's sections, tempo and bars in about half a minute. Send the mix: no
-stems are needed. Add audio features, tags, lyrics or a sample pack afterwards, one call each,
+Analysis finds your track's sections, tempo, bars and key in about half a minute. Send the mix:
+no stems are needed. Add audio features, tags, lyrics or a sample pack afterwards, one call each,
 whenever you like.
 
 ```python
 song = audial.segment("path/to/audio.mp3", genre="Tech House")
 
 analysis_id = song["analysis_id"]
-data = song["audio_segmentation"]
-print(data["bpm"], data["time_signature"])
+data = song["analysis"]
+print(data["bpm"], data["time_signature"], data["key"], data["camelot"])
 for section in data["sections"]:
-    print(f"{section['start']:7.2f}  {section['label']}  ({section['bars']} bars)")
+    print(f"{section['start']:7.2f}  {section['label']}  ({section['bars']} bars from bar {section['start_bar']})")
 ```
 
 `genre` picks dance section names (INTRO, UP, CHORUS, DOWN, OUTRO) or song section names
@@ -318,19 +318,31 @@ Each add-on is its own call on the analysis id, any time later. It waits for its
 returns it:
 
 ```python
-features = audial.audio_features(analysis_id)  # energy, danceability, loudness, mode, key
-tags = audial.tags(analysis_id)                # genre, moods, instruments, artist tags, description
-lyrics = audial.lyrics(analysis_id)            # text, timed lines, word timings
+features = audial.audio_features(analysis_id)  # key, camelot, features, per-section numbers
+tags = audial.tags(analysis_id)                # genres, instruments, moods, stems, description
+lyrics = audial.lyrics(analysis_id)            # vocal_start, timed lines with word timings
 pack = audial.generate_samples(analysis_id=analysis_id)   # drums, bass and melody loops
 
-print(features["song"]["energy"], [s["energy"] for s in features["sections"]])
+print(features["features"]["energy"], [s["energy"] for s in features["sections"]])
+print(tags["genres"], tags["stems"]["drums"])  # {"instruments": [...], "moods": [...]} or {"silent": True}
 for line in lyrics["lines"]:
     print(line["start"], [word for word, start, end in line["words"]])
 ```
 
-Energy and danceability are 0–100%. Energy reflects loudness, rhythmic activity and low end.
-Danceability reflects how strong and regular the beat is. Both are measured per section, so a
-drop reads higher than its breakdown.
+| Function | Returns (each also has `warnings`, a list) |
+|---|---|
+| `audio_features(id)` | `{"key", "camelot", "features": {energy, danceability, loudness_lufs, mode, mode_confidence, tatum}, "sections": [{label, start, end, energy, danceability, loudness_lufs}, ...]}` |
+| `tags(id)` | `{"genres", "instruments", "moods", "stems": {drums, bass, melody, vocals}, "description"}` |
+| `lyrics(id)` | `{"vocal_start", "lines": [{start, end, words: [[word, start, end], ...]}, ...]}` |
+
+These are the blocks the add-ons fill in the analysis, read from the merged view, so they match
+what `segment()` and the website show.
+
+Energy and danceability run from 0 to 1 (0–100%). Energy reflects loudness, rhythmic activity
+and low end. Danceability reflects how strong and regular the beat is. Both are measured per
+section, so a drop reads higher than its breakdown. `loudness_lufs` is integrated loudness
+(ITU-R BS.1770) in LUFS. A value that wasn't measured is `None`. A stem part with no sound is
+`{"silent": True}`; a track without vocals has `vocal_start` `None` and no lines.
 
 Tags, lyrics and the sample pack read the analysis's stems, which are made automatically in the
 background as soon as the analysis starts. Until they are ready the API answers
@@ -343,25 +355,36 @@ again returns the same result (`rerun=True` makes a new one).
 
 #### The merged result
 
-`segment()` returns the analysis with every add-on generated so far:
+`segment()` returns the analysis (format 5) with every add-on generated so far. Every time is
+in seconds on the track's timeline:
 
 ```python
 {
   "analysis_id": "-Pq0...",
-  "audio_segmentation": {
-    "format_version": 4, "duration": 391.2, "bpm": 129.0, "time_signature": "4/4",
-    "grid": {...},                  # the tempo map (below)
-    "sections": [{"label": "INTRO", "start": 0.2, "end": 30.0, "start_bar": -2, "bars": 16, ...}, ...],
-    "phrases": [...],
-    "song_analysis": {...},         # audio features, genre, song_tags, lyrics, lyrics_lines
-    "segment_analysis": [{...}, ...],   # one object per section
-    "beat_times": [...], "bar_times": [...]   # with expand_beats=True (the 1.6 default)
+  "analysis": {
+    "format_version": 5, "duration": 391.027, "bpm": 129.0, "tempo_mode": "constant",
+    "time_signature": "4/4",
+    "key": "Bmin", "camelot": "10A",      # None when no key was found
+    "structure": "dance",                 # "dance" or "song": which section names are used
+    "bar1": 5.768,                        # the first downbeat
+    "grid": {...},                        # the tempo map (below)
+    "lead_in": {"start": 0.0, "end": 5.768},   # None when bar 1 starts the file
+    "sections": [{"label": "INTRO", "start": 5.768, "end": 35.511, "start_bar": 1, "bars": 16,
+                  "fills": [],            # times of the drum fills in the section
+                  "energy": 0.599, "danceability": 0.58, "loudness_lufs": -10.42}, ...],
+    # each present once its add-on has run:
+    "features": {"energy": 0.597, "danceability": 0.474, "loudness_lufs": -8.94,
+                 "mode": "Natural Minor", "mode_confidence": 0.806, "tatum": "1/32"},
+    "tags": {"genres": [...], "instruments": [...], "moods": [...], "stems": {...}},
+    "description": "This track is ...",
+    "lyrics": {"vocal_start": 0.171, "lines": [...]}
   },
-  "segmentation": {...},            # the same object, under its 1.5 name
   "execution": {...},               # the analysis execution
-  "files": {"folder": "...", "files": {"analysis.json": "..."}}
+  "files": {"folder": "...", "files": {"analysis.json": "..."}}   # the analysis object as saved
 }
 ```
+
+`analysis.json` holds the analysis object itself, as the website's JSON button saves it.
 
 `segment(path, features=[...])` still works as it did in 1.5: it runs the `segmentation`
 pipeline, which makes the analysis and then the add-ons those features need, and the result
@@ -376,15 +399,16 @@ have one piece.
 ```python
 grid = data["grid"]
 grid["beat_count"], grid["bar_count"]       # totals, no expansion needed
-audial.grid.expand(grid)        # [(time, bar, beat), ...]; bars 0 and below are the lead-in
-audial.grid.beat_times(grid)    # every beat time
-audial.grid.bar_times(grid)     # the start of every bar from bar 1
 audial.grid.beats_of(data)      # (beat times, bar times) of an analysis of any format
+audial.grid.beat_times(data)    # every beat time
+audial.grid.bar_times(data)     # the start of every bar from bar 1
+audial.grid.expand(data)        # [(time, bar, beat), ...]; bars 0 and below are the lead-in
 ```
 
-In 1.6 `segment()` also adds `beat_times` and `bar_times` for you (`expand_beats=True`), so
-scripts written for older results keep working. 2.0 makes this opt-in; pass `expand_beats=False`
-and use `audial.grid` to be ready for it.
+Beats per bar come from `time_signature` (4 when there is none). Each function also takes the
+whole `segment()` result, a `grid` on its own, or an older analysis file (format 4, or formats 2
+and 3, which list `beat_times` and `bar_times`). `segment(path, expand_beats=True)` adds
+`beat_times` and `bar_times` to the analysis for you.
 
 ### Audio Mastering
 
@@ -656,8 +680,8 @@ audial config --show
 ## Result Format
 
 Functions that make files return a consistent result structure (`segment()` adds
-`analysis_id` and `audio_segmentation`; the add-ons `audio_features`, `tags` and `lyrics`
-return their result itself and save it as `<analysis_id>_analysis/<name>.json`):
+`analysis_id` and `analysis`; the add-ons `audio_features`, `tags` and `lyrics`
+return their block of the analysis and save it as `<analysis_id>_analysis/<name>.json`):
 
 ```python
 {
