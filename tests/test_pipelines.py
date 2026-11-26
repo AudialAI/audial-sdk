@@ -404,8 +404,8 @@ def test_generate_samples_still_validates_before_calling_the_api(audio_file, tmp
 
 
 def test_segment_with_features_runs_the_segmentation_pipeline(audio_file, tmp_path):
-    view = {"audio_segmentation": {"format_version": 4, "sections": [{"label": "INTRO", "start": 0}],
-                                   "song_analysis": {"energy": 0.5}, "segment_analysis": [{}]}}
+    view = {"format_version": 5, "sections": [{"label": "INTRO", "start": 0, "energy": 0.5}],
+            "features": {"energy": 0.5}}
     with mock.patch(
         "audial.pipelines.run", return_value=_completed_segmentation()
     ) as run, mock.patch.object(AudialProxy, "get_analysis_view", return_value=view) as get_view:
@@ -420,7 +420,7 @@ def test_segment_with_features_runs_the_segmentation_pipeline(audio_file, tmp_pa
     # The merged view of the analysis step's execution is what comes back.
     get_view.assert_called_once_with("exe-seg")
     assert result["analysis_id"] == "exe-seg"
-    assert result["segmentation"] == view["audio_segmentation"]
+    assert result["analysis"] == view
     assert result["execution"]["state"] == "completed"
     assert list(result["files"]["files"]) == ["analysis.json"]
     assert result["files"]["folder"].endswith("_segmentation")

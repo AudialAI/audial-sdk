@@ -146,7 +146,8 @@ ADDON_COMMANDS = {
         'analysis id or an audio file (a file is analysed first)'
     ),
     'tags': (
-        'Get tags (genre, moods, instruments, artist tags) for an analysis id or an audio file '
+        'Get tags (genres, instruments and moods for the song and each part, and a description) '
+        'for an analysis id or an audio file '
         '(a file is analysed first)'
     ),
     'lyrics': (
@@ -606,15 +607,20 @@ def _clock(seconds) -> str:
 
 
 def _print_analysis(result: Dict[str, Any]) -> None:
-    data = result.get("audio_segmentation") or {}
+    data = result.get("analysis") or {}
     analysis_id = result.get("analysis_id")
     print("\nAnalysis:")
     print(f"Analysis ID: {analysis_id}")
     if data.get("bpm"):
         print(f"BPM: {data['bpm']}")
+    if data.get("key"):
+        camelot = f" ({data['camelot']})" if data.get("camelot") else ""
+        print(f"Key: {data['key']}{camelot}")
+    if data.get("time_signature"):
+        print(f"Time signature: {data['time_signature']}")
     grid = data.get("grid") if isinstance(data.get("grid"), dict) else {}
-    beats = grid.get("beat_count", len(data.get("beat_times") or []))
-    bars = grid.get("bar_count", len(data.get("bar_times") or []))
+    beats = grid.get("beat_count")
+    bars = grid.get("bar_count")
     if beats:
         print(f"Beats: {beats}, bars: {bars}")
     sections = data.get("sections") if isinstance(data.get("sections"), list) else []
@@ -646,7 +652,7 @@ def segment_command(args) -> Dict[str, Any]:
                 api_key=args.api_key,
             )
         if args.as_json:
-            print(json.dumps({k: v for k, v in result.items() if k != "segmentation"}, indent=2, default=str))
+            print(json.dumps(result, indent=2, default=str, ensure_ascii=False))
         else:
             _print_analysis(result)
         return result
@@ -664,46 +670,58 @@ ADDON_FUNCTIONS_BY_COMMAND = {
 
 
 def _print_features(result: Dict[str, Any]) -> None:
-    song = result.get("song") or {}
-    for name, label in (("key", "Key"), ("mode", "Mode"), ("energy", "Energy"),
-                        ("danceability", "Danceability"), ("loudness", "Loudness (LUFS)"),
-                        ("tatum", "Beat division")):
-        if name in song:
-            print(f"{label}: {song[name]}")
+    if result.get("key"):
+        camelot = f" ({result['camelot']})" if result.get("camelot") else ""
+        print(f"Key: {result['key']}{camelot}")
+    features = result.get("features") or {}
+    for name, label in (("mode", "Mode"), ("energy", "Energy"), ("danceability", "Danceability"),
+                        ("loudness_lufs", "Loudness (LUFS)"), ("tatum", "Beat division")):
+        if features.get(name) is not None:
+            print(f"{label}: {features[name]}")
     sections = result.get("sections") or []
     if sections:
-        print("Sections (energy / danceability):")
+        print("Sections (energy / danceability / loudness LUFS):")
         for section in sections:
             print(f"  {_clock(section.get('start'))}  {section.get('label')}: "
-                  f"{section.get('energy')} / {section.get('danceability')}")
+                  f"{section.get('energy')} / {section.get('danceability')} / {section.get('loudness_lufs')}")
+    for warning in result.get("warnings") or []:
+        print(f"Warning: {warning}")
 
 
 def _print_tags(result: Dict[str, Any]) -> None:
     if result.get("description"):
         print(result["description"])
-    print(f"Genre: {', '.join(result.get('genre') or []) or '-'}")
-    song_tags = result.get("song_tags") or {}
-    for part, label in (("full", "Song"), ("drums", "Drums"), ("bass", "Bass"),
-                        ("melody", "Melody"), ("vocals", "Vocals")):
-        tags_of = song_tags.get(part) or {}
-        if part != "full" and part in song_tags:
-            if tags_of.get("silent") is True:
-                print(f"{label}: {SILENT_PART_TEXT[part]}")
-                continue
-            if not (tags_of.get("moods") or tags_of.get("instruments")):
-                print(f"{label}: {EMPTY_PART_TEXT}")
-                continue
-        for name in ("moods", "instruments", "artist_tags"):
+    print(f"Genres: {', '.join(result.get('genres') or []) or '-'}")
+    for name in ("instruments", "moods"):
+        values = result.get(name) or []
+        if values:
+            print(f"Song {name}: {', '.join(values)}")
+    stems = result.get("stems") or {}
+    for part, label in (("drums", "Drums"), ("bass", "Bass"), ("melody", "Melody"), ("vocals", "Vocals")):
+        if part not in stems:
+            continue
+        tags_of = stems.get(part) or {}
+        if tags_of.get("silent") is True:
+            print(f"{label}: {SILENT_PART_TEXT[part]}")
+            continue
+        if not (tags_of.get("moods") or tags_of.get("instruments")):
+            print(f"{label}: {EMPTY_PART_TEXT}")
+            continue
+        for name in ("instruments", "moods"):
             values = tags_of.get(name) or []
             if values:
-                print(f"{label} {name.replace('_', ' ')}: {', '.join(values)}")
+                print(f"{label} {name}: {', '.join(values)}")
+    for warning in result.get("warnings") or []:
+        print(f"Warning: {warning}")
 
 
 def _print_lyrics(result: Dict[str, Any]) -> None:
     lines = result.get("lines") or []
-    if result.get("is_instrumental") or not lines:
+    if not lines:
         print(INSTRUMENTAL_TEXT)
         return
+    if isinstance(result.get("vocal_start"), (int, float)):
+        print(f"Vocals start at {_clock(result['vocal_start'])}")
     for line in lines:
         words = " ".join(str(word[0]) for word in line.get("words") or [] if word)
         print(f"  {_clock(line.get('start'))}  {words}")

@@ -2,7 +2,7 @@
 Audial SDK: A Python package for interacting with the Audial audio processing API.
 """
 
-__version__ = "1.8.0"
+__version__ = "2.0.0"
 
 # Pipelines: multi-step jobs (audial.pipelines.run/get/cancel/list).
 # Imported before the functions below, which build on it.
@@ -14,7 +14,7 @@ from audial import pipelines
 # add-on of an analysis (audial.functions.lyrics).
 from audial import lyrics
 from audial import warmup
-# The tempo map of an analysis: audial.grid.expand(), bar_times(), beats_of().
+# The tempo map of an analysis: audial.grid.beats_of(), beat_times(), bar_times(), expand().
 from audial import grid
 from audial.lyrics import text2vox_tokens
 from audial.status import status

@@ -18,14 +18,14 @@ track = (sys.argv[1] if len(sys.argv) > 1 else None) or os.environ.get("AUDIAL_E
     HERE, "..", "test_audio", "01 Operator (Original Mix) - 10A - 2.mp3"
 )
 
-analysis = audial.segment(track, expand_beats=False)
-sections = analysis["audio_segmentation"]["sections"]
+analysis = audial.segment(track)
+sections = analysis["analysis"]["sections"]
 
 # Waits while the track's vocal stem is made in the background (409 STEMS_NOT_READY
 # is retried for up to wait_s seconds), then for the lyrics themselves.
 lyrics = audial.lyrics(analysis["analysis_id"])
 
-if lyrics["is_instrumental"] or not lyrics["lines"]:
+if not lyrics["lines"]:
     print("No vocals in this track.")
     sys.exit(0)
 
@@ -45,8 +45,8 @@ for line in lyrics["lines"]:
     if label != current:
         print(f"\n[{label}]")
         current = label
-    words = "  ".join(f"{word[0]}@{word[1]:.2f}" for word in line["words"])
+    words = "  ".join(f"{word[0]}@{word[1]:.2f}" if word[1] is not None else word[0] for word in line["words"])
     print(f"{line['start'] or 0:7.2f}-{line['end'] or 0:<7.2f} {words}")
 
-if lyrics["first_vocal_beat_time"] is not None:
-    print(f"\nVocals start at {lyrics['first_vocal_beat_time']:.2f} s")
+if lyrics["vocal_start"] is not None:
+    print(f"\nVocals start at {lyrics['vocal_start']:.2f} s")

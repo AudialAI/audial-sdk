@@ -30,7 +30,7 @@ result = audial.generate_samples(
 print(f"{len(result['files']['files'])} samples in {result['files']['folder']}")
 
 # 2. From an analysis: the analysis counts once, and the pack is included with it.
-analysis = audial.segment(track, genre="Tech House", expand_beats=False)
+analysis = audial.segment(track, genre="Tech House")
 pack = audial.generate_samples(analysis_id=analysis["analysis_id"], components=["drums", "bass"])
 print(f"{len(pack['files']['files'])} samples in {pack['files']['folder']}")
 for part, report in pack["components"].items():

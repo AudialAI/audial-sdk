@@ -1,6 +1,6 @@
 """
-Tags of an analysis: genre, moods and instruments for the whole track and for
-each of its parts, artist tags and a written description.
+Tags of an analysis: genres, moods and instruments for the whole track,
+instruments and moods for each of its parts, and a written description.
 """
 
 from typing import Any, Callable, Dict, Optional
@@ -10,9 +10,7 @@ from audial.api.constants import (
     ADDON_DEFAULT_POLL_INTERVAL,
     ADDON_DEFAULT_WAIT_S,
 )
-from audial.api.proxy import AudialProxy
-from audial.functions import _addon
-from audial.functions.segment import _fetch_view
+from audial.functions._addon import addon_result
 
 
 def tags(
@@ -26,8 +24,8 @@ def tags(
     on_progress: Optional[Callable[[Dict[str, Any]], Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Get the tags of an analysed track: genre, moods, instruments and artist tags for
-    the mix and each part, plus a written description.
+    Get the tags of an analysed track: genres, instruments and moods for the
+    mix, instruments and moods for each part, and a written description.
 
     Prerequisites: an analysis (``audial.segment()``) and its stems. Every
     analysis makes its stems in the background as soon as it starts (the
@@ -62,27 +60,30 @@ def tags(
             starts (see ``audial.warmup``).
 
     Returns:
-        Dict[str, Any]: The tags, exactly as the Audial website shows them::
+        Dict[str, Any]: The ``tags`` block and ``description`` of the analysis
+        (format 5), exactly as the Audial website shows them::
 
             {
-              "genre": ["UK Garage", "Speed Garage"],      # use as they are
-              "song_tags": {
-                "full":   {"moods": [...], "instruments": [...], "artist_tags": [...]},
-                "drums":  {"moods": [...], "instruments": [...], "silent": False},
-                "bass":   {"moods": [...], "instruments": [...], "silent": False},
-                "melody": {"moods": [...], "instruments": [...], "silent": False},
-                "vocals": {"moods": [...], "instruments": [...], "silent": False}
+              "genres": ["UK Garage", "Deep House"],       # use as they are
+              "instruments": ["synth bass", "synth pads"],
+              "moods": ["hypnotic", "driving"],
+              "stems": {
+                "drums":  {"instruments": ["kick", ...], "moods": [...]},
+                "bass":   {"instruments": [...], "moods": [...]},
+                "melody": {"instruments": [...], "moods": [...]},
+                "vocals": {"silent": True}                # no vocals in this track
               },
-              "description": "A driving UK garage cut ...",   # "" when none was made
-              "warnings": []
+              "description": "This track is ...",          # "" when none was written
+              "warnings": []                               # from this run
             }
 
-        There are five parts: ``full`` (the mix), ``drums``, ``bass``, ``melody``
-        and ``vocals``. ``artist_tags`` belong to the mix. A part whose stem is
-        silent has ``"silent": True`` and empty lists (for ``vocals``: no vocals
-        in the track). An analysis made before the drums and vocals were tagged
-        has the first three parts only, and no description. Lists that exist are
-        always lists (empty when nothing was found).
+        ``genres``, ``instruments`` and ``moods`` belong to the mix. A part of
+        ``stems`` is ``{"instruments", "moods"}``, or just ``{"silent": True}``
+        when that part of the track is silent. An analysis tagged before the
+        drums and vocals were tagged has ``bass`` and ``melody`` only, and no
+        description. Lists are always lists (empty when nothing was found).
+        ``audial.segment()`` (the merged view) holds the same values under
+        ``tags`` and ``description``.
 
     Raises:
         AudialAPIError: ``code == "STEMS_NOT_READY"`` when the stems are still
@@ -92,21 +93,5 @@ def tags(
             failed; or the API returned another error.
         AudialAuthError: If the credentials are rejected.
     """
-    analysis_exe_id, record, run = _addon.run_addon(
-        "tags", analysis_id, rerun=rerun, wait_s=wait_s, max_wait=max_wait,
-        poll_interval=poll_interval, on_progress=on_progress, api_key=api_key,
-    )
-    # The values the website shows come from the merged view; the record has the warnings.
-    view = _fetch_view(AudialProxy(api_key), analysis_exe_id, poll_interval)
-    data = view.get("audio_segmentation") if isinstance(view.get("audio_segmentation"), dict) else {}
-    song = data.get("song_analysis") if isinstance(data.get("song_analysis"), dict) else {}
-    stored = run.get("result") if isinstance(run.get("result"), dict) else {}
-    result = _addon.normalize_result("tags", {
-        "genre": song.get("genre"),
-        "song_tags": song.get("song_tags"),
-        "description": song.get("description"),
-        "warnings": stored.get("warnings"),
-    })
-    path = _addon.save_result("tags", analysis_exe_id, result, results_folder)
-    print(f"{_addon.LABELS['tags']} saved to {path}")
-    return result
+    return addon_result("tags", analysis_id, rerun, wait_s, max_wait, poll_interval,
+                        results_folder, api_key, on_progress)

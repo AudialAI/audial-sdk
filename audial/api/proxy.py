@@ -1680,8 +1680,13 @@ class AudialProxy:
         GET /db/{userId}/execution/{exeId}/analysis.
 
         Returns:
-            Dict[str, Any]: {"audio_segmentation": {...}}. `song_analysis` and
-                `segment_analysis` (one object per section) are always there.
+            Dict[str, Any]: The analysis in format 5, with no wrapper:
+                `format_version` (5), `duration`, `bpm`, `tempo_mode`,
+                `time_signature`, `key`, `camelot`, `structure`, `bar1`, `grid`,
+                `lead_in` and `sections`, plus `features`, `tags`,
+                `description` and `lyrics` once their add-on has run (and, on
+                each section, `energy`, `danceability`, `loudness_lufs`).
+                Older analyses are converted to format 5 when served.
 
         Raises:
             AudialAPIError: 409 ANALYSIS_NOT_READY before the analysis has a

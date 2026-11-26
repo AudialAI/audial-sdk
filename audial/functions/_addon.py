@@ -10,9 +10,14 @@ audial.generate_samples(analysis_id=...). The API side:
     409 STEMS_NOT_READY {state}               the track is still being prepared
     409 ADDON_UNAVAILABLE {state?}            the analysis hasn't finished, or kept no stems
     GET /db/{userId}/execution/{analysisExeId} -> addons.<key>: {state, exeId, result?, files?, error?}
+    GET /db/{userId}/execution/{analysisExeId}/analysis -> the merged view (format 5)
 
 Starting is idempotent (a repeated call answers the run that exists), so a
 retry never starts a second run.
+
+What audio_features, tags and lyrics return is read from the merged view, the
+same format 5 object the API and the website show: each add-on's block of it
+(see features_block, tags_block and lyrics_block), plus the run's warnings.
 """
 
 import json
@@ -32,6 +37,7 @@ from audial.api.constants import (
     ADDON_UNAVAILABLE_TEXT,
     ANALYSIS_IN_FLIGHT_STATES,
     ERROR_ADDON_UNAVAILABLE,
+    ERROR_ANALYSIS_NOT_READY,
     ERROR_STEMS_NOT_READY,
     PREPARING_TEXT,
     STEMS_FAILED_TEXT,
@@ -261,9 +267,48 @@ def _report(proxy: AudialProxy, child_id: str, on_progress: Optional[ProgressCal
         warmup_module.notify(on_progress, child)
 
 
+
 # ---------------------------------------------------------------------------
-# Results: the same shape however the database kept them
+# The merged view (format 5), and the blocks the add-ons fill in it
 # ---------------------------------------------------------------------------
+
+VIEW_ATTEMPTS = 6
+
+
+def fetch_view(proxy: AudialProxy, exe_id: str, poll_interval: float) -> Dict[str, Any]:
+    """
+    The merged view of an analysis (GET /db/{userId}/execution/{exeId}/analysis),
+    as the format 5 object; retried briefly while it is not readable yet
+    (409 ANALYSIS_NOT_READY, 5xx, or no answer).
+    """
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            return view_object(proxy.get_analysis_view(exe_id))
+        except AudialAPIError as exc:
+            retry = (
+                exc.code == ERROR_ANALYSIS_NOT_READY
+                or exc.status_code is None
+                or (isinstance(exc.status_code, int) and exc.status_code >= 500)
+            )
+            if not retry or attempt >= VIEW_ATTEMPTS:
+                raise
+        time.sleep(poll_interval)
+
+
+def view_object(view: Any) -> Dict[str, Any]:
+    """
+    The analysis object of a merged view. The API serves format 5 with no
+    wrapper; an ``{"audio_segmentation": ...}`` wrapper (an API from before
+    format 5) is taken off, and nothing else is changed.
+    """
+    if not isinstance(view, dict):
+        return {}
+    if isinstance(view.get("audio_segmentation"), dict):
+        return view["audio_segmentation"]
+    return view
+
 
 def listify(value: Any) -> List[Any]:
     """A list as stored: lists stay lists; {"0": a, "1": b} (a sparse list) becomes [a, b]."""
@@ -278,49 +323,122 @@ def _strings(value: Any) -> List[str]:
     return [item for item in listify(value) if isinstance(item, str)]
 
 
-# The lists each part of `song_tags` has. A part the view does not have stays absent.
-SONG_TAG_LISTS = {
-    "full": ("moods", "instruments", "artist_tags"),
-    "drums": ("moods", "instruments"),
-    "bass": ("moods", "instruments"),
-    "melody": ("moods", "instruments"),
-    "vocals": ("moods", "instruments"),
+def _number(value: Any) -> Optional[float]:
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+# The per-section numbers Audio Features adds to each section of the view.
+SECTION_FEATURES = ("energy", "danceability", "loudness_lufs")
+
+# Stem parts in the order the website shows them; any other part follows.
+STEM_PARTS = ("drums", "bass", "melody", "vocals")
+
+
+def features_block(view: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    What Audio Features fills in the view::
+
+        {"key": "Bmin", "camelot": "10A",
+         "features": {"energy", "danceability", "loudness_lufs", "mode", "mode_confidence", "tatum"},
+         "sections": [{"label", "start", "end", "energy", "danceability", "loudness_lufs"}, ...]}
+
+    ``key`` and ``camelot`` are the view's top-level ones. A number that was
+    not measured is None.
+    """
+    features = view.get("features") if isinstance(view.get("features"), dict) else {}
+    sections = []
+    for section in listify(view.get("sections")):
+        if not isinstance(section, dict):
+            continue
+        row: Dict[str, Any] = {
+            "label": section.get("label"),
+            "start": _number(section.get("start")),
+            "end": _number(section.get("end")),
+        }
+        for name in SECTION_FEATURES:
+            row[name] = _number(section.get(name))
+        sections.append(row)
+    return {
+        "key": view.get("key") if isinstance(view.get("key"), str) else None,
+        "camelot": view.get("camelot") if isinstance(view.get("camelot"), str) else None,
+        "features": dict(features),
+        "sections": sections,
+    }
+
+
+def _stem_part(part: Any) -> Dict[str, Any]:
+    if isinstance(part, dict) and part.get("silent") is True:
+        return {"silent": True}
+    part = part if isinstance(part, dict) else {}
+    return {"instruments": _strings(part.get("instruments")), "moods": _strings(part.get("moods"))}
+
+
+def tags_block(view: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    What Tags fills in the view: its ``tags`` block and ``description``::
+
+        {"genres": [...], "instruments": [...], "moods": [...],
+         "stems": {"drums": {"instruments": [...], "moods": [...]}, ..., "vocals": {"silent": True}},
+         "description": "..."}
+
+    A stem part is ``{"instruments", "moods"}``, or ``{"silent": True}`` when
+    that part of the track is silent. Parts the view does not have stay absent
+    (older tags have ``bass`` and ``melody`` only). Lists are always lists.
+    """
+    tags = view.get("tags") if isinstance(view.get("tags"), dict) else {}
+    stems_in = tags.get("stems") if isinstance(tags.get("stems"), dict) else {}
+    order = [p for p in STEM_PARTS if p in stems_in] + [p for p in stems_in if p not in STEM_PARTS]
+    description = view.get("description")
+    return {
+        "genres": _strings(tags.get("genres")),
+        "instruments": _strings(tags.get("instruments")),
+        "moods": _strings(tags.get("moods")),
+        "stems": {part: _stem_part(stems_in[part]) for part in order},
+        "description": description if isinstance(description, str) else "",
+    }
+
+
+def _word(word: Any) -> List[Any]:
+    entry = listify(word)
+    if not entry or not isinstance(entry[0], str):
+        return []
+    text = entry[0]
+    start = _number(entry[1]) if len(entry) > 1 else None
+    end = _number(entry[2]) if len(entry) > 2 else None
+    return [text, start, end]
+
+
+def lyrics_block(view: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    What Lyrics fills in the view: its ``lyrics`` block::
+
+        {"vocal_start": 12.34,
+         "lines": [{"start": 12.34, "end": 13.1, "words": [["hello", 12.34, 12.71], ...]}, ...]}
+
+    Without vocals: ``{"vocal_start": None, "lines": []}``. Words are
+    ``[word, start, end]``; a time that is not known is None.
+    """
+    lyrics = view.get("lyrics") if isinstance(view.get("lyrics"), dict) else {}
+    lines = []
+    for line in listify(lyrics.get("lines")):
+        if not isinstance(line, dict):
+            continue
+        words = [w for w in (_word(word) for word in listify(line.get("words"))) if w]
+        lines.append(dict(line, start=_number(line.get("start")), end=_number(line.get("end")), words=words))
+    return {"vocal_start": _number(lyrics.get("vocal_start")), "lines": lines}
+
+
+BLOCKS: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
+    "features": features_block,
+    "tags": tags_block,
+    "lyrics": lyrics_block,
 }
 
 
-def normalize_result(key: str, result: Any) -> Dict[str, Any]:
-    """An add-on's result with every list present as a list (the database drops empty ones)."""
-    out: Dict[str, Any] = dict(result) if isinstance(result, dict) else {}
-
-    if key == "features":
-        out["sections"] = [s for s in listify(out.get("sections")) if isinstance(s, dict)]
-        out["warnings"] = _strings(out.get("warnings"))
-    elif key == "tags":
-        out["genre"] = _strings(out.get("genre"))
-        song_tags = dict(out.get("song_tags")) if isinstance(out.get("song_tags"), dict) else {}
-        for part, names in SONG_TAG_LISTS.items():
-            if isinstance(song_tags.get(part), dict):
-                source = song_tags[part]
-                song_tags[part] = dict(source, **{name: _strings(source.get(name)) for name in names})
-        out["song_tags"] = song_tags
-        out["description"] = out.get("description") if isinstance(out.get("description"), str) else ""
-        out["warnings"] = _strings(out.get("warnings"))
-    elif key == "lyrics":
-        out["lyrics"] = out.get("lyrics") if isinstance(out.get("lyrics"), str) else ""
-        out["lines"] = [
-            dict(line,
-                 start=line.get("start") if isinstance(line.get("start"), (int, float)) else None,
-                 end=line.get("end") if isinstance(line.get("end"), (int, float)) else None,
-                 words=[listify(word) for word in listify(line.get("words"))])
-            for line in listify(out.get("lines"))
-            if isinstance(line, dict)
-        ]
-        out["segments"] = [s for s in listify(out.get("segments")) if isinstance(s, dict)]
-        out["section_lyrics"] = [s if isinstance(s, str) else "" for s in listify(out.get("section_lyrics"))]
-        vocal_start = out.get("first_vocal_beat_time")
-        out["first_vocal_beat_time"] = vocal_start if isinstance(vocal_start, (int, float)) else None
-        out["warnings"] = _strings(out.get("warnings"))
-    return out
+def run_warnings(run: Dict[str, Any]) -> List[str]:
+    """The warnings the add-on's run left on the analysis record (``[]`` when none)."""
+    stored = run.get("result") if isinstance(run.get("result"), dict) else {}
+    return _strings(stored.get("warnings"))
 
 
 def save_result(key: str, analysis_exe_id: str, result: Dict[str, Any],
@@ -345,12 +463,17 @@ def addon_result(
     api_key: Optional[str],
     on_progress: Optional[ProgressCallback],
 ) -> Dict[str, Any]:
-    """run_addon, then the normalized result, saved to the results folder."""
+    """
+    run_addon, then the add-on's block of the merged view (format 5) plus the
+    run's ``warnings``, saved to the results folder.
+    """
     analysis_exe_id, _, run = run_addon(
         key, analysis_id, rerun=rerun, wait_s=wait_s, max_wait=max_wait,
         poll_interval=poll_interval, on_progress=on_progress, api_key=api_key,
     )
-    result = normalize_result(key, run.get("result"))
+    view = fetch_view(AudialProxy(api_key), analysis_exe_id, poll_interval)
+    result = BLOCKS[key](view)
+    result["warnings"] = run_warnings(run)
     path = save_result(key, analysis_exe_id, result, results_folder)
     print(f"{LABELS[key]} saved to {path}")
     return result
