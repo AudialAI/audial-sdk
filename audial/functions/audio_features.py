@@ -1,6 +1,7 @@
 """
-Audio features of an analysis: energy, danceability, loudness, mode, key and
-beat division, for the song and for each section.
+Audio features of an analysis: energy, danceability and loudness for the song
+and for each section, and the song's mode and beat division (tatum), with the
+track's key.
 """
 
 from typing import Any, Callable, Dict, Optional
@@ -29,8 +30,8 @@ def audio_features(
     Energy and danceability are 0-1 (shown as 0-100%). Energy reflects
     loudness, rhythmic activity and low end; danceability reflects how strong
     and regular the beat is. Both are measured per section, so a drop reads
-    higher than its breakdown. Loudness is in LUFS (the broadcast standard,
-    over both channels).
+    higher than its breakdown. Loudness is integrated loudness in LUFS
+    (ITU-R BS.1770, over both channels).
 
     Prerequisite: an analysis (``audial.segment()``). Audio features read the
     mix, so they can run as soon as the analysis has finished.
@@ -61,21 +62,26 @@ def audio_features(
             starts (see ``audial.warmup``).
 
     Returns:
-        Dict[str, Any]: The audio features::
+        Dict[str, Any]: What audio features add to the analysis (format 5)::
 
             {
-              "features_version": 1,
-              "song": {"key": "A min", "key_source": "detected", "loudness": -7.1,
-                       "energy": 0.62, "danceability": 0.71, "mode": "aeolian",
-                       "mode_confidence": 0.8, "tatum": "1/16"},
-              "sections": [{"index": 0, "label": "INTRO", "start": 0.2, "end": 30.1,
-                            "energy": 0.41, ...}, ...],
-              "warnings": []
+              "key": "Bmin",                  # the track's key (top level of the analysis)
+              "camelot": "10A",
+              "features": {"energy": 0.597, "danceability": 0.474, "loudness_lufs": -8.94,
+                           "mode": "Natural Minor", "mode_confidence": 0.806,
+                           "tatum": "1/32"},
+              "sections": [{"label": "INTRO", "start": 5.768, "end": 35.511,
+                            "energy": 0.599, "danceability": 0.58,
+                            "loudness_lufs": -10.42}, ...],   # one per section
+              "warnings": []                  # from this run
             }
 
-        A value that could not be measured is None. ``audial.segment()`` (or
-        the merged view) lays the same values into ``song_analysis`` and
-        ``segment_analysis``.
+        A value that could not be measured is None. ``key`` is found by the
+        analysis itself; on an analysis made before 2026-11-26 it comes from
+        these audio features, and is None until they have run. ``camelot``
+        is None when ``key`` is. ``audial.segment()`` (the merged view) holds
+        the same values: ``key``, ``camelot``, ``features``, and the numbers
+        on each of its ``sections``.
 
     Raises:
         AudialAPIError: ``code == "ADDON_UNAVAILABLE"`` when this analysis

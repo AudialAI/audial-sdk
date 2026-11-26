@@ -1,7 +1,7 @@
 """
-Unit tests for the analysis and its add-ons (SDK 1.6): segment(), the
-audio_features / tags / lyrics add-ons, generate_samples(analysis_id=...)
-and the CLI subcommands that wrap them.
+Unit tests for the analysis and its add-ons (SDK 2.0, analysis format 5):
+segment(), the audio_features / tags / lyrics add-ons,
+generate_samples(analysis_id=...) and the CLI subcommands that wrap them.
 
 The HTTP layer is mocked at requests.Session.get/post with a small URL
 router, and the base URL points at a host that does not exist, so no request
@@ -102,44 +102,43 @@ def clock(monkeypatch):
     return fake
 
 
-@pytest.fixture(autouse=True)
-def fresh_warning_state(monkeypatch):
-    # The 2.0 notice is shown once per process; every test starts from "not shown yet".
-    monkeypatch.setattr(segment_module, "_EXPANSION_NOTICE_SHOWN", False)
-
-
 # ---------------------------------------------------------------------------
-# Fixtures: an analysis record and its merged view (format 4)
+# Fixtures: an analysis record and its merged view (format 5)
 # ---------------------------------------------------------------------------
 
 GRID = {
-    "beats_per_bar": 4,
-    "tolerance_ms": 25,
-    "max_error_ms": 0.0,
     "beat_count": 12,
     "bar_count": 2,
+    "max_error_ms": 0.0,
     "pieces": [{"start": 0.3, "bpm": 125.0, "bar": -1, "beat": 2, "count": 12}],
 }
 
 
-def _view(**song):
-    return {
-        "audio_segmentation": {
-            "format_version": 4,
-            "bpm": 125.0,
-            "duration": 6.0,
-            "time_signature": "4/4",
-            "grid": GRID,
-            "sections": [
-                {"label": "INTRO", "start": 0.3, "end": 3.66, "start_bar": -1, "bars": 2},
-                {"label": "UP", "start": 3.66, "end": 6.0, "start_bar": 1, "bars": 2},
-            ],
-            "phrases": [],
-            "song_analysis": dict(song),
-            "segment_analysis": [{}, {}],
-            "bar_analysis": [],
-        }
+def _view(sections=None, **blocks):
+    """A format 5 merged view; `blocks` are its add-on blocks (features, tags, description, lyrics)."""
+    view = {
+        "format_version": 5,
+        "duration": 6.0,
+        "bpm": 125.0,
+        "tempo_mode": "constant",
+        "time_signature": "4/4",
+        "key": "Amin",
+        "camelot": "8A",
+        "structure": "dance",
+        "bar1": 3.66,
+        "grid": GRID,
+        "lead_in": None,
+        "sections": sections or [
+            {"label": "INTRO", "start": 0.3, "end": 3.66, "start_bar": -1, "bars": 2, "fills": []},
+            {"label": "UP", "start": 3.66, "end": 6.0, "start_bar": 1, "bars": 2, "fills": [5.5]},
+        ],
     }
+    view.update(blocks)
+    return view
+
+
+with open(os.path.join(os.path.dirname(__file__), "fixtures", "analysis_format5.json")) as _f:
+    FULL_VIEW = json.load(_f)["view"]   # a real analysis with every add-on, lyrics made up
 
 
 def _analysis(state="completed", stems="running", **addons):
@@ -181,7 +180,8 @@ def test_segment_runs_one_analysis_call_with_the_mix(api, clock, audio_file, tmp
     api.on("GET", VIEW, _ok(_view()))
     seen = []
 
-    with pytest.warns(FutureWarning):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")   # 2.0 says nothing about beat lists
         result = segment(audio_file, genre="Tech House", edm=True, results_folder=str(tmp_path),
                          on_progress=lambda s: seen.append(s["state"]))
 
@@ -194,68 +194,66 @@ def test_segment_runs_one_analysis_call_with_the_mix(api, clock, audio_file, tmp
     assert "Content-Type" not in post["headers"]
     assert not [c for c in api.calls if c[1].startswith("/pipelines")]
 
+    # The result is the merged view as the API served it (format 5), under `analysis`.
     assert result["analysis_id"] == "exe-ana"
-    assert result["audio_segmentation"]["grid"] == GRID
-    assert result["segmentation"] is result["audio_segmentation"]
+    assert result["analysis"] == _view()
+    assert result["analysis"]["format_version"] == 5
+    assert "audio_segmentation" not in result and "segmentation" not in result
+    assert "beat_times" not in result["analysis"] and "bar_times" not in result["analysis"]
     assert result["execution"]["state"] == "completed"
     assert seen == ["processing", "processing", "completed"]
 
-    # The merged view is saved, as the analysis JSON always was.
+    # The saved analysis.json is the format 5 object itself, with no wrapper.
     saved = result["files"]["files"]["analysis.json"]
     with open(saved) as f:
-        assert json.load(f)["audio_segmentation"]["grid"] == GRID
+        assert json.load(f) == _view()
     assert result["files"]["folder"].endswith("_segmentation")
 
 
-def test_segment_compat(api, clock, audio_file, tmp_path):
-    """Format 4: beat_times and bar_times are added from grid; expand_beats=False adds neither."""
+def test_segment_returns_the_full_format5_view(api, clock, audio_file, tmp_path):
+    api.on("POST", "/functions/run/segmentation", _ok(_analysis()))
+    api.on("GET", EXE, _ok(_analysis()))
+    api.on("GET", VIEW, _ok(FULL_VIEW))
+
+    result = segment(audio_file, results_folder=str(tmp_path))
+
+    analysis = result["analysis"]
+    assert analysis == FULL_VIEW
+    assert (analysis["key"], analysis["camelot"], analysis["structure"]) == ("Bmin", "10A", "dance")
+    assert analysis["sections"][0]["loudness_lufs"] == -10.42
+    for gone in ("song_analysis", "segment_analysis", "phrases", "first_vocal_beat_time",
+                 "filtered_segments", "segment_classifications", "mood", "mode", "song_start"):
+        assert gone not in analysis
+    assert grid.bar_times(result)[:1] == [5.753]
+
+
+def test_segment_expand_beats_is_opt_in(api, clock, audio_file, tmp_path):
+    """expand_beats=True adds beat_times and bar_times from grid; the saved file stays format 5."""
     api.on("POST", "/functions/run/segmentation", _ok(_analysis()))
     api.on("GET", EXE, _ok(_analysis()))
     api.on("GET", VIEW, _ok(_view()))
 
-    with pytest.warns(FutureWarning, match="2.0"):
-        result = segment(audio_file, results_folder=str(tmp_path))
-    data = result["audio_segmentation"]
-    beats, bars = grid.beats_of({"grid": GRID})
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = segment(audio_file, results_folder=str(tmp_path), expand_beats=True)
+    data = result["analysis"]
+    beats, bars = grid.beats_of({"time_signature": "4/4", "grid": GRID})
     assert data["grid"] == GRID
     assert data["beat_times"] == beats
     assert data["bar_times"] == bars == [3.66, 5.58]
     assert len(data["beat_times"]) == GRID["beat_count"]
-
-    api.on("GET", VIEW, _ok(_view()))
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")   # no notice when nothing is expanded
-        plain = segment(audio_file, results_folder=str(tmp_path), expand_beats=False)
-    assert "grid" in plain["audio_segmentation"]
-    assert "beat_times" not in plain["audio_segmentation"]
-    assert "bar_times" not in plain["audio_segmentation"]
+    with open(result["files"]["files"]["analysis.json"]) as f:
+        assert "beat_times" not in json.load(f)
 
 
-def test_segment_warns_about_2_0_only_once(api, clock, audio_file, tmp_path):
+def test_segment_takes_off_an_older_api_wrapper(api, clock, audio_file, tmp_path):
+    """An API from before format 5 wraps the view in audio_segmentation: the SDK takes it off."""
     api.on("POST", "/functions/run/segmentation", _ok(_analysis()))
     api.on("GET", EXE, _ok(_analysis()))
-    api.on("GET", VIEW, _ok(_view()))
+    api.on("GET", VIEW, _ok({"audio_segmentation": _view()}))
 
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        segment(audio_file, results_folder=str(tmp_path))
-        api.on("GET", VIEW, _ok(_view()))
-        segment(audio_file, results_folder=str(tmp_path))
-    notices = [w for w in caught if issubclass(w.category, FutureWarning)]
-    assert len(notices) == 1
-
-
-def test_segment_keeps_an_older_file_as_it_is(api, clock, audio_file, tmp_path):
-    older = {"audio_segmentation": {"format_version": 3, "beat_times": [0.5, 1.0], "bar_times": [0.5],
-                                    "song_analysis": {}, "segment_analysis": []}}
-    api.on("POST", "/functions/run/segmentation", _ok(_analysis()))
-    api.on("GET", EXE, _ok(_analysis()))
-    api.on("GET", VIEW, _ok(older))
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        result = segment(audio_file, results_folder=str(tmp_path))
-    assert result["audio_segmentation"]["beat_times"] == [0.5, 1.0]
+    result = segment(audio_file, results_folder=str(tmp_path))
+    assert result["analysis"] == _view()
 
 
 def test_segment_accepts_the_old_parameters_with_a_deprecation_warning(api, clock, audio_file, tmp_path):
@@ -315,7 +313,7 @@ def _pipeline_done(warnings_=None):
 
 
 def test_segment_with_features_runs_the_pipeline_and_reads_the_merged_view(api, clock, audio_file, tmp_path):
-    api.on("GET", VIEW, _ok(_view(energy=0.62, genre=["Electronic---House"])))
+    api.on("GET", VIEW, _ok(_view(features={"energy": 0.62}, tags={"genres": ["House"]})))
 
     with mock.patch("audial.pipelines.run",
                     return_value=_pipeline_done(["Lyrics could not be made: no vocals"])) as run:
@@ -332,7 +330,8 @@ def test_segment_with_features_runs_the_pipeline_and_reads_the_merged_view(api, 
     # The merged view is read from the API (never from outputs.analysis's host).
     assert api.requests_to("GET", VIEW)
     assert result["analysis_id"] == "exe-ana"
-    assert result["audio_segmentation"]["song_analysis"]["energy"] == 0.62
+    assert result["analysis"]["features"]["energy"] == 0.62
+    assert result["analysis"]["tags"]["genres"] == ["House"]
     assert result["execution"]["pipelineId"] == "pl-2"
     assert result["warnings"] == ["Lyrics could not be made: no vocals"]
 
@@ -346,7 +345,7 @@ def test_segment_with_features_and_edm_runs_the_add_ons_itself(api, clock, audio
            _refusal("ADDON_UNAVAILABLE", error="This analysis has no stems to build this from."))
     api.on("GET", EXE, _ok(_analysis(features={"state": "completed", "exeId": "exe-feat", "startedAt": 1,
                                                "result": FEATURES})))
-    api.on("GET", VIEW, _ok(_view(energy=0.62)))
+    api.on("GET", VIEW, _ok(_view(features={"energy": 0.62})))
 
     with mock.patch("audial.pipelines.run") as pipeline:
         result = segment(audio_file, edm=False, features=["energy", "mode", "lyrics"],
@@ -356,7 +355,7 @@ def test_segment_with_features_and_edm_runs_the_add_ons_itself(api, clock, audio
     [post] = api.requests_to("POST", "/functions/run/segmentation")
     assert json.loads(dict(post["data"])["segmentationParameters"]) == {"edm": False}
     assert len(api.requests_to("POST", "/functions/run/audio-features")) == 1   # once for both
-    assert result["audio_segmentation"]["song_analysis"]["energy"] == 0.62
+    assert result["analysis"]["features"]["energy"] == 0.62
     assert result["warnings"] == [
         "Lyrics could not be made: This result can't be added to this analysis. "
         "This analysis has no stems to build this from. (ADDON_UNAVAILABLE)"
@@ -374,6 +373,8 @@ def test_segment_with_only_key_still_asks_for_the_audio_features(api, clock, aud
 # Add-ons: audio_features, tags, lyrics
 # ---------------------------------------------------------------------------
 
+# What each add-on's run stored on the analysis record (its own worker shape). Only its
+# `warnings` reach the caller; the values come from the merged view (format 5).
 FEATURES = {
     "features_version": 1,
     "song": {"key": "A min", "loudness": -7.1, "energy": 0.62, "danceability": 0.71, "mode": "aeolian"},
@@ -381,35 +382,63 @@ FEATURES = {
     "warnings": [],
 }
 
-# What the add-on stored on the record (internal), and what the merged view shows (display-ready).
 STORED_TAGS = {
     "tags_version": 2,
     "genre": ["Electronic---UK Garage"],
     "song_tags": {"full": {"moods": ["dark"]}},
-    "source": {"title": "Operator", "artist": "Hans Glader"},
+    "source": {"title": "A title", "artist": "An artist"},
     "warnings": ["The description could not be made."],
 }
 
-TAGS = {
-    "genre": ["UK Garage", "Speed Garage"],
-    "song_tags": {
-        "full": {"moods": ["driving", "groovy"], "instruments": ["drum machine"],
-                 "artist_tags": ["uk garage", "ukg"]},
-        "drums": {"moods": ["driving"], "instruments": ["kick"], "silent": False},
-        "bass": {"moods": ["deep"], "instruments": ["sub bass"], "silent": False},
-        "melody": {"moods": ["warm"], "instruments": ["electric piano"], "silent": False},
-        "vocals": {"moods": [], "instruments": [], "silent": True},
+STORED_LYRICS = {"lyrics": "hello there", "is_instrumental": False, "first_vocal_beat_time": 12.34}
+
+# The view's blocks once the add-ons have run.
+FEATURES_VIEW = {
+    "features": {"energy": 0.62, "danceability": 0.71, "loudness_lufs": -7.1,
+                 "mode": "Natural Minor", "mode_confidence": 0.8, "tatum": "1/16"},
+    "sections": [
+        {"label": "INTRO", "start": 0.3, "end": 3.66, "start_bar": -1, "bars": 2, "fills": [],
+         "energy": 0.4, "danceability": 0.5, "loudness_lufs": -12.0},
+        {"label": "UP", "start": 3.66, "end": 6.0, "start_bar": 1, "bars": 2, "fills": [5.5],
+         "energy": 0.8, "danceability": 0.75, "loudness_lufs": None},
+    ],
+}
+
+FEATURES_RESULT = {
+    "key": "Amin",
+    "camelot": "8A",
+    "features": FEATURES_VIEW["features"],
+    "sections": [
+        {"label": "INTRO", "start": 0.3, "end": 3.66, "energy": 0.4, "danceability": 0.5, "loudness_lufs": -12.0},
+        {"label": "UP", "start": 3.66, "end": 6.0, "energy": 0.8, "danceability": 0.75, "loudness_lufs": None},
+    ],
+    "warnings": [],
+}
+
+TAGS_VIEW = {
+    "tags": {
+        "genres": ["UK Garage", "Speed Garage"],
+        "instruments": ["drum machine"],
+        "moods": ["driving", "groovy"],
+        "stems": {
+            "drums": {"instruments": ["kick"], "moods": ["driving"]},
+            "bass": {"instruments": ["sub bass"], "moods": ["deep"]},
+            "melody": {"instruments": ["electric piano"], "moods": ["warm"]},
+            "vocals": {"silent": True},
+        },
     },
     "description": "A driving UK garage cut built on a swung two-step groove.",
 }
 
-LYRICS = {
-    "lyrics": "hello there",
-    "is_instrumental": False,
-    # The database keeps arrays as objects when it feels like it; the SDK hands back lists.
-    "lines": {"0": {"start": 12.34, "end": 13.1, "words": {"0": ["hello", 12.34, 12.71], "1": ["there", 12.8, 13.1]}}},
-    "section_lyrics": ["", "hello there"],
-    "first_vocal_beat_time": 12.34,
+TAGS = dict(TAGS_VIEW["tags"], description=TAGS_VIEW["description"], warnings=[])
+
+LYRICS_VIEW = {
+    "lyrics": {
+        "vocal_start": 12.34,
+        # The database keeps arrays as objects when it feels like it; the SDK hands back lists.
+        "lines": {"0": {"start": 12.34, "end": 13.1,
+                        "words": {"0": ["hello", 12.34, 12.71], "1": ["there", 12.8, 13.1]}}},
+    },
 }
 
 
@@ -423,16 +452,17 @@ def test_addon_waits_for_stems(api, clock, tmp_path):
            _ok(_analysis(stems="completed", tags={"state": "completed", "exeId": "exe-tags", "startedAt": 1,
                                                   "result": STORED_TAGS})))
     api.on("GET", f"/db/{USER}/execution/exe-tags", _ok({"exeId": "exe-tags", "state": "processing"}))
-    api.on("GET", VIEW, _ok(_view(**TAGS)))
+    api.on("GET", VIEW, _ok(_view(**TAGS_VIEW)))
 
     result = tags("exe-ana", results_folder=str(tmp_path), poll_interval=5)
 
     starts = api.requests_to("POST", "/functions/run/audio-tags")
     assert len(starts) == 2
     assert starts[0]["json"] == {"userId": USER, "analysisExeId": "exe-ana"}
-    # The merged view's display-ready values come back unchanged, plus the record's warnings.
+    # The view's tags block and description come back unchanged, plus the run's warnings.
     assert result == dict(TAGS, warnings=["The description could not be made."])
-    assert "source" not in result and "tags_version" not in result
+    assert list(result) == ["genres", "instruments", "moods", "stems", "description", "warnings"]
+    assert "source" not in result and "tags_version" not in result and "song_tags" not in result
     assert json.load(open(tmp_path / "exe-ana_analysis" / "tags.json")) == result
     assert clock.sleeps and clock.now < 600
 
@@ -458,7 +488,8 @@ def test_addon_restarts_a_failed_stem_split_once(api, clock, tmp_path):
     api.on("POST", "/functions/run/stem-splitter",
            _ok({"exeId": "exe-stem2", "analysisExeId": "exe-ana", "addon": "stems", "state": "running"}))
     api.on("GET", EXE, _ok(_analysis(stems="completed", lyrics={"state": "completed", "exeId": "exe-lyr",
-                                                                "startedAt": 1, "result": LYRICS})))
+                                                                "startedAt": 1, "result": STORED_LYRICS})))
+    api.on("GET", VIEW, _ok(_view(**LYRICS_VIEW)))
 
     lyrics_function("exe-ana", results_folder=str(tmp_path))
 
@@ -495,23 +526,27 @@ def test_addon_waits_while_the_analysis_is_still_running(api, clock, tmp_path):
            _ok({"exeId": "exe-feat", "analysisExeId": "exe-ana", "addon": "features", "state": "queued"}))
     api.on("GET", EXE, _ok(_analysis(features={"state": "completed", "exeId": "exe-feat", "startedAt": 1,
                                                "result": FEATURES})))
+    api.on("GET", VIEW, _ok(_view(**FEATURES_VIEW)))
 
     result = audio_features("exe-ana", results_folder=str(tmp_path))
-    assert result["song"]["energy"] == 0.62
+    assert result["features"]["energy"] == 0.62
     assert len(api.requests_to("POST", "/functions/run/audio-features")) == 2
 
 
-def test_audio_features_returns_the_result_and_saves_it(api, clock, tmp_path):
+def test_audio_features_returns_the_views_values_and_saves_them(api, clock, tmp_path):
     api.on("POST", "/functions/run/audio-features",
            _ok({"exeId": "exe-feat", "analysisExeId": "exe-ana", "addon": "features", "state": "completed"}))
     api.on("GET", EXE, _ok(_analysis(features={"state": "completed", "exeId": "exe-feat", "startedAt": 1,
-                                               "result": FEATURES})))
+                                               "result": dict(FEATURES, warnings=["Loudness was not measured."])})))
+    api.on("GET", VIEW, _ok(_view(**FEATURES_VIEW)))
 
     result = audio_features("exe-ana", results_folder=str(tmp_path))
 
-    assert result == FEATURES
+    # key and camelot (top level of the view), the features block, each section's numbers.
+    assert result == dict(FEATURES_RESULT, warnings=["Loudness was not measured."])
+    assert "song" not in result and "features_version" not in result
     with open(os.path.join(str(tmp_path), "exe-ana_analysis", "features.json")) as f:
-        assert json.load(f) == FEATURES
+        assert json.load(f) == result
 
 
 def test_addon_rerun_is_sent(api, clock, tmp_path):
@@ -519,6 +554,7 @@ def test_addon_rerun_is_sent(api, clock, tmp_path):
            _ok({"exeId": "exe-feat2", "analysisExeId": "exe-ana", "addon": "features", "state": "queued"}))
     api.on("GET", EXE, _ok(_analysis(features={"state": "completed", "exeId": "exe-feat2", "startedAt": 1,
                                                "result": FEATURES})))
+    api.on("GET", VIEW, _ok(_view(**FEATURES_VIEW)))
     audio_features("exe-ana", rerun=True, results_folder=str(tmp_path))
     [start] = api.requests_to("POST", "/functions/run/audio-features")
     assert start["json"]["rerun"] is True
@@ -545,6 +581,7 @@ def test_addon_reports_progress_from_its_run(api, clock, tmp_path):
            _ok(_analysis(features={"state": "running", "exeId": "exe-feat", "startedAt": 1})),
            _ok(_analysis(features={"state": "completed", "exeId": "exe-feat", "startedAt": 1, "result": FEATURES})))
     api.on("GET", f"/db/{USER}/execution/exe-feat", _ok(warm))
+    api.on("GET", VIEW, _ok(_view(**FEATURES_VIEW)))
     seen = []
 
     audio_features("exe-ana", results_folder=str(tmp_path), on_progress=seen.append)
@@ -555,17 +592,20 @@ def test_lyrics_returns_lines_with_word_times(api, clock, tmp_path):
     api.on("POST", "/functions/run/lyrics",
            _ok({"exeId": "exe-lyr", "analysisExeId": "exe-ana", "addon": "lyrics", "state": "queued"}))
     api.on("GET", EXE, _ok(_analysis(stems="completed", lyrics={"state": "completed", "exeId": "exe-lyr",
-                                                                "startedAt": 1, "result": LYRICS})))
+                                                                "startedAt": 1, "result": STORED_LYRICS})))
+    api.on("GET", VIEW, _ok(_view(**LYRICS_VIEW)))
 
     # audial.lyrics is both the per-note lyric module and this add-on.
     result = audial.lyrics("exe-ana", results_folder=str(tmp_path))
 
-    assert result["lines"] == [
-        {"start": 12.34, "end": 13.1, "words": [["hello", 12.34, 12.71], ["there", 12.8, 13.1]]}
-    ]
-    assert result["lyrics"] == "hello there"
-    assert result["section_lyrics"] == ["", "hello there"]
-    assert result["first_vocal_beat_time"] == 12.34
+    # The view's lyrics block: vocal_start and timed lines (sparse lists become lists).
+    assert result == {
+        "vocal_start": 12.34,
+        "lines": [{"start": 12.34, "end": 13.1, "words": [["hello", 12.34, 12.71], ["there", 12.8, 13.1]]}],
+        "warnings": [],
+    }
+    with open(os.path.join(str(tmp_path), "exe-ana_analysis", "lyrics.json")) as f:
+        assert json.load(f) == result
 
 
 def test_lyrics_of_an_instrumental_has_no_lines(api, clock, tmp_path):
@@ -574,10 +614,11 @@ def test_lyrics_of_an_instrumental_has_no_lines(api, clock, tmp_path):
     api.on("GET", EXE, _ok(_analysis(stems="completed", lyrics={
         "state": "completed", "exeId": "exe-lyr", "startedAt": 1,
         "result": {"is_instrumental": True, "first_vocal_beat_time": None}})))
+    # The database drops the empty list: the block arrives as {"vocal_start": null}.
+    api.on("GET", VIEW, _ok(_view(lyrics={"vocal_start": None})))
 
     result = lyrics_function("exe-ana", results_folder=str(tmp_path))
-    assert result["is_instrumental"] is True
-    assert result["lines"] == [] and result["lyrics"] == ""
+    assert result == {"vocal_start": None, "lines": [], "warnings": []}
 
 
 def test_lyrics_module_keeps_the_per_note_helpers():
@@ -592,10 +633,12 @@ def test_addon_follows_the_real_analysis_id(api, clock, tmp_path):
            _ok({"exeId": "exe-feat", "analysisExeId": "exe-ana", "addon": "features", "state": "completed"}))
     api.on("GET", EXE, _ok(_analysis(features={"state": "completed", "exeId": "exe-feat", "startedAt": 1,
                                                "result": FEATURES})))
+    api.on("GET", VIEW, _ok(_view(**FEATURES_VIEW)))
     audio_features("pl-old", results_folder=str(tmp_path))
     [start] = api.requests_to("POST", "/functions/run/audio-features")
     assert start["json"]["analysisExeId"] == "pl-old"
     assert api.requests_to("GET", EXE)
+    assert api.requests_to("GET", VIEW)   # the analysis's own view, not the pipeline id's
 
 
 def test_addon_needs_an_analysis_id(api):
@@ -657,8 +700,8 @@ def _cli(argv):
 
 def test_cli_features_on_a_file_analyses_it_first(audio_file, capsys):
     with mock.patch("audial.cli.commands.segment",
-                    return_value={"analysis_id": "exe-ana", "audio_segmentation": {}}) as seg, \
-            mock.patch("audial.cli.commands.audio_features", return_value=FEATURES) as feat, \
+                    return_value={"analysis_id": "exe-ana", "analysis": {}}) as seg, \
+            mock.patch("audial.cli.commands.audio_features", return_value=FEATURES_RESULT) as feat, \
             mock.patch("audial.cli.commands.warmup_reporter", return_value=None):
         _cli(["features", audio_file, "--genre", "House"])
 
@@ -668,11 +711,13 @@ def test_cli_features_on_a_file_analyses_it_first(audio_file, capsys):
     assert feat.call_args.args[0] == "exe-ana"
     out = capsys.readouterr().out
     assert "exe-ana" in out and "0.62" in out
+    assert "Key: Amin (8A)" in out and "Loudness (LUFS): -7.1" in out and "Mode: Natural Minor" in out
 
 
 def test_cli_lyrics_on_an_analysis_id_prints_timed_lines(capsys):
-    lines = {"lyrics": "hello there", "is_instrumental": False,
-             "lines": [{"start": 12.34, "end": 13.1, "words": [["hello", 12.34, 12.71], ["there", 12.8, 13.1]]}]}
+    lines = {"vocal_start": 12.34,
+             "lines": [{"start": 12.34, "end": 13.1, "words": [["hello", 12.34, 12.71], ["there", 12.8, 13.1]]}],
+             "warnings": []}
     with mock.patch("audial.cli.commands.segment") as seg, \
             mock.patch("audial.cli.commands.lyrics_addon", return_value=lines) as run, \
             mock.patch("audial.cli.commands.warmup_reporter", return_value=None):
@@ -687,7 +732,7 @@ def test_cli_lyrics_on_an_analysis_id_prints_timed_lines(capsys):
 
 def test_cli_lyrics_of_an_instrumental(capsys):
     with mock.patch("audial.cli.commands.lyrics_addon",
-                    return_value={"is_instrumental": True, "lines": [], "lyrics": ""}), \
+                    return_value={"vocal_start": None, "lines": [], "warnings": []}), \
             mock.patch("audial.cli.commands.warmup_reporter", return_value=None):
         _cli(["lyrics", "exe-ana"])
     assert "No vocals in this track." in capsys.readouterr().out
@@ -708,9 +753,11 @@ def test_cli_tags_prints_the_description_first_and_genres_verbatim(capsys):
     lines = [line for line in out.splitlines() if line.strip()]
     assert lines[0].startswith("Tags")  # the heading, then the description before anything else
     assert lines[1] == TAGS["description"]
-    assert "Genre: UK Garage, Speed Garage" in out
-    assert out.index(TAGS["description"]) < out.index("Genre:")
-    assert "Song artist tags: uk garage, ukg" in out
+    assert "Genres: UK Garage, Speed Garage" in out
+    assert out.index(TAGS["description"]) < out.index("Genres:")
+    assert "Song moods: driving, groovy" in out
+    assert "Song instruments: drum machine" in out
+    assert "artist" not in out
     assert "Drums instruments: kick" in out
     assert "Vocals: No vocals in this track." in out
     assert "Vocals moods" not in out
@@ -719,14 +766,14 @@ def test_cli_tags_prints_the_description_first_and_genres_verbatim(capsys):
 def test_cli_tags_silent_and_empty_parts_print_the_website_lines(capsys):
     """R17: a silent part prints its role's line; a part that is not silent but has no tags prints
     "Nothing to tag in this part."; a part the view does not have (version 1 drums, vocals) prints nothing."""
-    song_tags = {
-        "full": {"moods": ["dark"], "instruments": [], "artist_tags": []},
-        "drums": {"moods": [], "instruments": [], "silent": True},
-        "bass": {"moods": [], "instruments": [], "silent": True},
-        "melody": {"moods": [], "instruments": [], "silent": True},
-        "vocals": {"moods": [], "instruments": [], "silent": False},
+    stems = {
+        "drums": {"silent": True},
+        "bass": {"silent": True},
+        "melody": {"silent": True},
+        "vocals": {"instruments": [], "moods": []},
     }
-    with mock.patch("audial.cli.commands.tags", return_value=dict(TAGS, song_tags=song_tags, warnings=[])), \
+    with mock.patch("audial.cli.commands.tags",
+                    return_value=dict(TAGS, moods=["dark"], instruments=[], stems=stems)), \
             mock.patch("audial.cli.commands.warmup_reporter", return_value=None):
         _cli(["tags", "exe-ana"])
     out = capsys.readouterr().out
@@ -736,9 +783,8 @@ def test_cli_tags_silent_and_empty_parts_print_the_website_lines(capsys):
     assert "Vocals: Nothing to tag in this part." in out
     assert "Song moods: dark" in out and "Song: Nothing" not in out
 
-    v1 = {"full": {"moods": ["dark"], "instruments": [], "artist_tags": []},
-          "bass": {"moods": [], "instruments": []}, "melody": {"moods": ["warm"], "instruments": []}}
-    with mock.patch("audial.cli.commands.tags", return_value=dict(TAGS, song_tags=v1, warnings=[])), \
+    v1 = {"bass": {"instruments": [], "moods": []}, "melody": {"instruments": [], "moods": ["warm"]}}
+    with mock.patch("audial.cli.commands.tags", return_value=dict(TAGS, stems=v1)), \
             mock.patch("audial.cli.commands.warmup_reporter", return_value=None):
         _cli(["tags", "exe-ana"])
     out = capsys.readouterr().out
@@ -748,34 +794,48 @@ def test_cli_tags_silent_and_empty_parts_print_the_website_lines(capsys):
 
 
 def test_tags_without_description_or_extra_parts(api, clock, tmp_path):
-    """An older record's view has no description and no drums or vocals: they stay as the view has them."""
+    """Version 1 tags (older records): bass and melody only, no description; they stay as the view has them."""
     api.on("POST", "/functions/run/audio-tags",
            _ok({"exeId": "exe-tags", "analysisExeId": "exe-ana", "addon": "tags", "state": "queued"}))
     api.on("GET", EXE, _ok(_analysis(stems="completed", tags={"state": "completed", "exeId": "exe-tags",
                                                               "startedAt": 1, "result": {"warnings": []}})))
     api.on("GET", f"/db/{USER}/execution/exe-tags", _ok({"exeId": "exe-tags", "state": "processing"}))
-    api.on("GET", VIEW, _ok(_view(genre=["House"], song_tags={"full": {"moods": ["dark"]}, "bass": {}})))
+    # The database drops empty lists, and keeps some lists as {"0": ...}.
+    api.on("GET", VIEW, _ok(_view(tags={"genres": {"0": "House"}, "moods": ["dark"],
+                                        "stems": {"bass": {}, "melody": {"moods": ["warm"]}}})))
 
     result = tags("exe-ana", results_folder=str(tmp_path))
 
-    assert result["description"] == ""
-    assert result["genre"] == ["House"]
-    assert result["song_tags"]["full"]["moods"] == ["dark"]
-    assert result["song_tags"]["bass"] == {"moods": [], "instruments": []}
-    assert "vocals" not in result["song_tags"]
-    assert result["warnings"] == []
+    assert result == {
+        "genres": ["House"],
+        "instruments": [],
+        "moods": ["dark"],
+        "stems": {"bass": {"instruments": [], "moods": []},
+                  "melody": {"instruments": [], "moods": ["warm"]}},
+        "description": "",
+        "warnings": [],
+    }
 
 
 def test_cli_segment_runs_the_fast_analysis_by_default(audio_file, capsys):
-    view = _view()["audio_segmentation"]
     with mock.patch("audial.cli.commands.segment", return_value={
-        "analysis_id": "exe-ana", "audio_segmentation": view, "segmentation": view,
+        "analysis_id": "exe-ana", "analysis": _view(),
         "files": {"folder": "/tmp/x", "files": {"analysis.json": "/tmp/x/analysis.json"}},
     }) as seg, mock.patch("audial.cli.commands.warmup_reporter", return_value=None):
         _cli(["segment", audio_file])
     assert seg.call_args.kwargs["features"] is None
     out = capsys.readouterr().out
     assert "exe-ana" in out and "INTRO" in out and "audial lyrics exe-ana" in out
+    assert "Key: Amin (8A)" in out and "Beats: 12, bars: 2" in out
+
+
+def test_cli_segment_json_prints_the_result(audio_file, capsys):
+    result = {"analysis_id": "exe-ana", "analysis": _view(),
+              "files": {"folder": "/tmp/x", "files": {"analysis.json": "/tmp/x/analysis.json"}}}
+    with mock.patch("audial.cli.commands.segment", return_value=result), \
+            mock.patch("audial.cli.commands.warmup_reporter", return_value=None):
+        _cli(["segment", audio_file, "--json"])
+    assert json.loads(capsys.readouterr().out) == result
 
 
 def test_python_m_audial_lists_the_new_subcommands():
@@ -794,7 +854,7 @@ def test_status_names_cover_the_add_ons():
 
 
 def test_version():
-    assert audial.__version__ == "1.8.0"
+    assert audial.__version__ == "2.0.0"
 
 
 def test_segment_keeps_the_15_positional_order():
@@ -805,3 +865,78 @@ def test_segment_keeps_the_15_positional_order():
     assert [p.name for p in params[:9]] == ["file_path", "components", "analysis_type", "features", "genre",
                                             "results_folder", "api_key", "on_progress", "poll_interval"]
     assert all(p.kind is inspect.Parameter.KEYWORD_ONLY for p in params if p.name in ("edm", "expand_beats", "max_wait"))
+
+
+def test_segment_expand_beats_defaults_to_false():
+    import inspect
+    from audial.functions.segment import segment as seg
+    assert inspect.signature(seg).parameters["expand_beats"].default is False
+
+
+# ---------------------------------------------------------------------------
+# The add-on blocks, read from a format 5 view
+# ---------------------------------------------------------------------------
+
+def test_blocks_of_the_full_format5_view():
+    features = _addon.features_block(FULL_VIEW)
+    assert features["key"] == "Bmin" and features["camelot"] == "10A"
+    assert features["features"] == FULL_VIEW["features"]
+    assert len(features["sections"]) == len(FULL_VIEW["sections"])
+    assert features["sections"][0] == {"label": "INTRO", "start": 5.768, "end": 35.511,
+                                       "energy": 0.599, "danceability": 0.58, "loudness_lufs": -10.42}
+
+    tagged = _addon.tags_block(FULL_VIEW)
+    assert list(tagged) == ["genres", "instruments", "moods", "stems", "description"]
+    assert tagged["genres"] == FULL_VIEW["tags"]["genres"]
+    assert tagged["stems"] == FULL_VIEW["tags"]["stems"]
+    assert tagged["description"] == FULL_VIEW["description"]
+
+    assert _addon.lyrics_block(FULL_VIEW) == FULL_VIEW["lyrics"]
+
+
+def test_blocks_before_their_add_on_has_run():
+    bare = _view()
+    assert _addon.features_block(bare) == {
+        "key": "Amin", "camelot": "8A", "features": {},
+        "sections": [
+            {"label": "INTRO", "start": 0.3, "end": 3.66, "energy": None, "danceability": None, "loudness_lufs": None},
+            {"label": "UP", "start": 3.66, "end": 6.0, "energy": None, "danceability": None, "loudness_lufs": None},
+        ],
+    }
+    assert _addon.tags_block(bare) == {"genres": [], "instruments": [], "moods": [], "stems": {}, "description": ""}
+    assert _addon.lyrics_block(bare) == {"vocal_start": None, "lines": []}
+    no_key = _addon.features_block(dict(bare, key=None, camelot=None))
+    assert no_key["key"] is None and no_key["camelot"] is None
+
+
+def test_stem_parts_are_instruments_and_moods_or_silent():
+    view = _view(tags={"stems": {
+        "vocals": {"silent": True, "instruments": [], "moods": []},
+        "drums": {"silent": False, "instruments": ["kick"]},
+        "bass": {"instruments": {"0": "sub bass"}, "moods": ["deep"]},
+    }})
+    stems = _addon.tags_block(view)["stems"]
+    assert stems == {
+        "drums": {"instruments": ["kick"], "moods": []},
+        "bass": {"instruments": ["sub bass"], "moods": ["deep"]},
+        "vocals": {"silent": True},
+    }
+    assert list(stems) == ["drums", "bass", "vocals"]   # the website's order
+
+
+def test_lyrics_lines_with_unknown_times():
+    """Plain text from an older analysis is one line with null times: it comes back as it is."""
+    view = _view(lyrics={"vocal_start": None, "lines": [
+        {"start": None, "end": None, "text": "hello there", "words": []},
+        {"start": "1.0", "end": 2.0, "words": [["hi", None, 2.0], [None, 1, 2], "junk"]},
+    ]})
+    assert _addon.lyrics_block(view)["lines"] == [
+        {"start": None, "end": None, "text": "hello there", "words": []},
+        {"start": None, "end": 2.0, "words": [["hi", None, 2.0]]},
+    ]
+
+
+def test_view_object_takes_off_only_the_old_wrapper():
+    assert _addon.view_object({"audio_segmentation": {"format_version": 4}}) == {"format_version": 4}
+    assert _addon.view_object(FULL_VIEW) is FULL_VIEW
+    assert _addon.view_object(None) == {}

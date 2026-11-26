@@ -1,0 +1,270 @@
+{
+ "about": "A format 5 merged view (docs/FORMAT-5.md in segmentation2) of a real analysis, with made-up lyrics and description. Every add-on has run.",
+ "view": {
+  "format_version": 5,
+  "duration": 391.027,
+  "bpm": 129.0,
+  "tempo_mode": "constant",
+  "time_signature": "4/4",
+  "key": "Bmin",
+  "camelot": "10A",
+  "structure": "dance",
+  "bar1": 5.768,
+  "grid": {
+   "beat_count": 841,
+   "bar_count": 208,
+   "max_error_ms": 24.0,
+   "pieces": [
+    {
+     "start": 0.171,
+     "bpm": 128.9925,
+     "bar": -2,
+     "beat": 1,
+     "count": 179
+    },
+    {
+     "start": 83.435,
+     "bpm": 129.0023,
+     "bar": 42,
+     "beat": 4,
+     "count": 232
+    },
+    {
+     "start": 191.347,
+     "bpm": 128.9981,
+     "bar": 100,
+     "beat": 4,
+     "count": 266
+    },
+    {
+     "start": 315.043,
+     "bpm": 129.0211,
+     "bar": 167,
+     "beat": 2,
+     "count": 164
+    }
+   ]
+  },
+  "lead_in": {
+   "start": 0.0,
+   "end": 5.768
+  },
+  "sections": [
+   {
+    "label": "INTRO",
+    "start": 5.768,
+    "end": 35.511,
+    "start_bar": 1,
+    "bars": 16,
+    "fills": [],
+    "energy": 0.599,
+    "danceability": 0.58,
+    "loudness_lufs": -10.42
+   },
+   {
+    "label": "UP",
+    "start": 35.511,
+    "end": 65.3,
+    "start_bar": 17,
+    "bars": 16,
+    "fills": [
+     63.439
+    ],
+    "energy": 0.279,
+    "danceability": 0.398,
+    "loudness_lufs": -13.61
+   },
+   {
+    "label": "CHORUS",
+    "start": 65.3,
+    "end": 154.589,
+    "start_bar": 33,
+    "bars": 48,
+    "fills": [
+     93.205,
+     122.969,
+     152.731
+    ],
+    "energy": 0.846,
+    "danceability": 0.568,
+    "loudness_lufs": -7.39
+   },
+   {
+    "label": "UP",
+    "start": 154.589,
+    "end": 195.549,
+    "start_bar": 81,
+    "bars": 22,
+    "fills": [
+     185.775
+    ],
+    "energy": 0.242,
+    "danceability": 0.549,
+    "loudness_lufs": -15.42
+   },
+   {
+    "label": "CHORUS",
+    "start": 195.549,
+    "end": 284.847,
+    "start_bar": 103,
+    "bars": 48,
+    "fills": [
+     223.435,
+     255.06
+    ],
+    "energy": 0.823,
+    "danceability": 0.486,
+    "loudness_lufs": -7.19
+   },
+   {
+    "label": "DOWN",
+    "start": 284.847,
+    "end": 305.303,
+    "start_bar": 151,
+    "bars": 11,
+    "fills": [],
+    "energy": 0.168,
+    "danceability": 0.2,
+    "loudness_lufs": -15.76
+   },
+   {
+    "label": "OUTRO",
+    "start": 305.303,
+    "end": 391.027,
+    "start_bar": 162,
+    "bars": 47,
+    "fills": [],
+    "energy": 0.516,
+    "danceability": 0.381,
+    "loudness_lufs": -10.39
+   }
+  ],
+  "features": {
+   "energy": 0.597,
+   "danceability": 0.474,
+   "loudness_lufs": -8.94,
+   "mode": "Natural Minor",
+   "mode_confidence": 0.806,
+   "tatum": "1/32"
+  },
+  "tags": {
+   "genres": [
+    "UK Garage",
+    "Deep House",
+    "Tech House"
+   ],
+   "instruments": [
+    "synth bass",
+    "synth pads",
+    "synth lead",
+    "drum machine",
+    "vocal chops"
+   ],
+   "moods": [
+    "hypnotic",
+    "driving",
+    "energetic",
+    "groovy",
+    "uplifting"
+   ],
+   "stems": {
+    "drums": {
+     "instruments": [
+      "kick",
+      "snare",
+      "hi-hats",
+      "clap",
+      "shaker",
+      "toms",
+      "cymbals",
+      "percussion"
+     ],
+     "moods": [
+      "driving",
+      "hypnotic",
+      "energetic",
+      "groovy"
+     ]
+    },
+    "bass": {
+     "instruments": [
+      "synth bass",
+      "sub bass"
+     ],
+     "moods": [
+      "dark",
+      "mysterious",
+      "hypnotic",
+      "ethereal"
+     ]
+    },
+    "melody": {
+     "instruments": [
+      "synth pads",
+      "synth lead",
+      "synth arpeggio"
+     ],
+     "moods": [
+      "melancholic",
+      "introspective",
+      "dreamy",
+      "ethereal"
+     ]
+    },
+    "vocals": {
+     "instruments": [
+      "female vocals"
+     ],
+     "moods": [
+      "sensual",
+      "melancholic",
+      "ethereal"
+     ]
+    }
+   }
+  },
+  "description": "A driving house track with a deep synth bass, crisp drums and airy pads.",
+  "lyrics": {
+   "vocal_start": 0.171,
+   "lines": [
+    {
+     "start": 0.02,
+     "end": 1.9,
+     "words": [
+      [
+       "Hello",
+       0.02,
+       0.61
+      ],
+      [
+       "out",
+       0.7,
+       1.02
+      ],
+      [
+       "there,",
+       1.1,
+       1.9
+      ]
+     ]
+    },
+    {
+     "start": 13.17,
+     "end": 13.73,
+     "words": [
+      [
+       "you're",
+       13.17,
+       13.51
+      ],
+      [
+       "up.",
+       13.51,
+       13.73
+      ]
+     ]
+    }
+   ]
+  }
+ }
+}

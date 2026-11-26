@@ -1,5 +1,5 @@
 """
-Analysis: a track's sections, tempo and bars.
+Analysis: a track's sections, tempo, bars and key.
 
 Analysis needs only the mix. Without ``features`` this is one call
 (POST /functions/run/segmentation) that answers in about half a minute; audio
@@ -11,8 +11,9 @@ With ``features`` it runs the ``segmentation`` pipeline as before: the API
 runs the analysis, then the add-ons the features ask for, and the result
 already holds them.
 
-Either way the result is the merged view of the analysis
-(GET /db/{userId}/execution/{exeId}/analysis) plus its ``analysis_id``.
+Either way the result holds the merged view of the analysis
+(GET /db/{userId}/execution/{exeId}/analysis), the format 5 object the API and
+the website show, plus its ``analysis_id``.
 """
 
 import json
@@ -29,7 +30,6 @@ from audial.api.constants import (
     ANALYSIS_DEFAULT_MAX_WAIT,
     ANALYSIS_DEFAULT_POLL_INTERVAL,
     DEFAULT_PIPELINE_POLL_INTERVAL,
-    ERROR_ANALYSIS_NOT_READY,
     EXECUTION_STATE_COMPLETED,
     EXECUTION_STATE_FAILED,
     FEATURE_ADDONS,
@@ -53,16 +53,6 @@ VALID_FEATURES = [
 
 EXECUTION_STATE_CANCELLED = "cancelled"
 MAX_TRANSIENT_POLL_ERRORS = 8
-VIEW_ATTEMPTS = 6
-
-EXPANSION_NOTICE = (
-    "audial.segment() added beat_times and bar_times, computed from the tempo map ('grid'). "
-    "From Audial SDK 2.0 they are added only with expand_beats=True; audial.grid.beat_times() "
-    "and audial.grid.bar_times() compute them from any result."
-)
-
-# Shown once per process (see _expand_beats).
-_EXPANSION_NOTICE_SHOWN = False
 
 
 def segment(
@@ -77,11 +67,11 @@ def segment(
     poll_interval: Optional[float] = None,
     *,
     edm: Optional[bool] = None,
-    expand_beats: bool = True,
+    expand_beats: bool = False,
     max_wait: float = ANALYSIS_DEFAULT_MAX_WAIT,
 ) -> Dict[str, Any]:
     """
-    Analyse a track: its sections, phrases and tempo map.
+    Analyse a track: its sections, tempo map, bars and key.
 
     Analysis finds your track's sections, tempo and bars in about half a
     minute. Send the mix: no stems are needed. Add audio features, tags,
@@ -98,10 +88,8 @@ def segment(
 
     Beats and bars aren't listed one by one: ``grid`` describes them (where
     each constant-tempo piece starts, its BPM, and its bar and beat; every beat
-    time is ``start + k * 60 / bpm``). With ``expand_beats=True``, the default
-    in 1.6, ``beat_times`` and ``bar_times`` are added from it, so scripts
-    written for older results keep working; a one-time FutureWarning says that
-    2.0 makes this opt-in. See ``audial.grid``.
+    time is ``start + k * 60 / bpm``). ``audial.grid.beats_of(result)`` lists
+    them; ``expand_beats=True`` adds the lists to the result. See ``audial.grid``.
 
     Cost: an analysis counts as one run. Everything added to it (features,
     tags, lyrics, a sample pack) is included.
@@ -118,13 +106,15 @@ def segment(
             1.5 named them: "mode", "energy", "loudness", "danceability",
             "tatum", "key" (audio features), "tags", "lyrics". Default: none
             (the fast analysis).
-        results_folder (str, optional): Folder to save the result in, as
-            ``<file name>_segmentation/analysis.json``. Uses default if None.
+        results_folder (str, optional): Folder to save the analysis in, as
+            ``<file name>_segmentation/analysis.json`` (the format 5 object,
+            as the website's JSON button saves it). Uses default if None.
         on_progress (callable, optional): Called with the analysis execution
             after every status check (with ``features``: the pipeline status).
             It carries ``warmup`` while a machine starts; see audial.warmup.
-        expand_beats (bool, optional): Add ``beat_times`` and ``bar_times``
-            computed from ``grid`` (default True).
+        expand_beats (bool, optional): Also add ``beat_times`` and
+            ``bar_times`` to ``analysis``, computed from ``grid`` (default
+            False; until 2.0 the default was True).
         api_key (str, optional): API key to use. Uses default if None.
         poll_interval (float, optional): Seconds between status checks
             (default 3; 5 for the pipeline).
@@ -135,25 +125,40 @@ def segment(
         analysis_type: No longer used (deprecated; accepted and ignored).
 
     Returns:
-        Dict[str, Any]:
-            analysis_id: The analysis's id, for the add-ons.
-            audio_segmentation: The merged view of the analysis:
-                ``format_version`` (4), ``duration``, ``bpm``, ``tempo_mode``,
-                ``time_signature``, ``grid``, ``sections`` (label, start, end,
-                start_bar, bars, ...), ``phrases``, ``lead_in``, ``bar1``,
-                ``song_start``, ``mood``, ``mode``, ``song_analysis`` (what the
-                add-ons have filled so far; ``{}`` before any),
-                ``segment_analysis`` (one object per section),
-                ``first_vocal_beat_time`` once lyrics exist, and, with
-                ``expand_beats``, ``beat_times`` and ``bar_times``. An analysis
-                from before the tempo map has its own ``beat_times`` and
-                ``bar_times`` instead of ``grid``.
-            segmentation: The same object (the 1.5 name).
-            execution: The analysis execution (with ``features``: the final
-                pipeline status).
-            files: {folder, files} -- the saved ``analysis.json``.
-            warnings: With ``features``, the add-ons that could not be made
-                (present only when there are some).
+        Dict[str, Any]::
+
+            {
+              "analysis_id": "-Nx...",       # for the add-ons
+              "analysis": {                  # the merged view, analysis format 5
+                "format_version": 5,
+                "duration": 391.027,         # seconds; every time is in seconds
+                "bpm": 129.0,
+                "tempo_mode": "constant",    # or "variable"
+                "time_signature": "4/4",
+                "key": "Bmin",               # None when no key was found
+                "camelot": "10A",            # None when key is None
+                "structure": "dance",        # "dance" (INTRO/UP/CHORUS/DOWN/OUTRO)
+                                             # or "song" (INTRO/VERSE/UP/CHORUS/OUTRO)
+                "bar1": 5.768,               # the first downbeat
+                "grid": {"beat_count": 841, "bar_count": 208, "max_error_ms": 24.0,
+                         "pieces": [{"start": 0.171, "bpm": 128.99, "bar": -2,
+                                     "beat": 1, "count": 179}, ...]},
+                "lead_in": {"start": 0.0, "end": 5.768},   # None when bar 1 starts the file
+                "sections": [{"label": "INTRO", "start": 5.768, "end": 35.511,
+                              "start_bar": 1, "bars": 16, "fills": [...]}, ...],
+                # once their add-on has run (see audio_features, tags, lyrics):
+                #   sections[i] energy, danceability, loudness_lufs; "features";
+                #   "tags"; "description"; "lyrics"
+              },
+              "execution": {...},            # the analysis execution (with features:
+                                             # the final pipeline status)
+              "files": {"folder": ..., "files": {"analysis.json": ...}},
+              "warnings": [...]              # with features: add-ons that could not
+                                             # be made (only when there are some)
+            }
+
+        With ``expand_beats=True``, ``analysis`` also has ``beat_times`` and
+        ``bar_times``. Older analyses are served in format 5 too.
 
     Raises:
         AudialError: Invalid input, a missing file, or a failed analysis.
@@ -169,7 +174,7 @@ def segment(
     if components is not None or analysis_type is not None:
         warnings.warn(
             "segment(): components and analysis_type are no longer used (analysis needs only "
-            "the mix) and will be removed in 2.0.",
+            "the mix) and will be removed in a later version.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -206,25 +211,30 @@ def segment(
             addon_warnings = _run_addons(analysis_id, features, interval, api_key)
             execution = proxy.get_execution(analysis_id)
 
-    view = _fetch_view(proxy, analysis_id, poll_interval or ANALYSIS_DEFAULT_POLL_INTERVAL)
-    data = view.get("audio_segmentation") if isinstance(view.get("audio_segmentation"), dict) else {}
-    if expand_beats:
-        _expand_beats(data)
+    analysis = _addon.fetch_view(proxy, analysis_id, poll_interval or ANALYSIS_DEFAULT_POLL_INTERVAL)
 
+    # The file is the format 5 object as the API serves it (as the website saves it).
     folder = os.path.join(results_dir, f"{os.path.basename(file_path)}_segmentation")
     os.makedirs(folder, exist_ok=True)
     path = os.path.join(folder, "analysis.json")
     with open(path, "w", encoding="utf-8") as f:
-        json.dump({"audio_segmentation": data}, f, indent=2, ensure_ascii=False)
+        json.dump(analysis, f, indent=2, ensure_ascii=False)
 
-    sections = data.get("sections") if isinstance(data.get("sections"), list) else []
-    print(f"Analysis {analysis_id}: {len(sections)} sections"
-          f"{', ' + str(data['bpm']) + ' BPM' if data.get('bpm') else ''}. Saved to {path}")
+    if expand_beats:
+        analysis = dict(analysis)
+        analysis["beat_times"], analysis["bar_times"] = grid.beats_of(analysis)
+
+    sections = analysis.get("sections") if isinstance(analysis.get("sections"), list) else []
+    facts = [f"{len(sections)} sections"]
+    if analysis.get("bpm"):
+        facts.append(f"{analysis['bpm']} BPM")
+    if isinstance(analysis.get("key"), str):
+        facts.append(analysis["key"])
+    print(f"Analysis {analysis_id}: {', '.join(facts)}. Saved to {path}")
 
     result: Dict[str, Any] = {
         "analysis_id": analysis_id,
-        "audio_segmentation": data,
-        "segmentation": data,
+        "analysis": analysis,
         "execution": execution,
         "files": {"folder": folder, "files": {"analysis.json": path}},
     }
@@ -299,25 +309,6 @@ def _error_text(execution: Dict[str, Any]) -> str:
     if isinstance(error, dict):
         error = error.get("message") or error.get("error") or error.get("code")
     return error if isinstance(error, str) and error else "unknown error"
-
-
-def _fetch_view(proxy: AudialProxy, exe_id: str, poll_interval: float) -> Dict[str, Any]:
-    """The merged view, retried briefly while it is not readable yet (409/502/5xx)."""
-    attempt = 0
-    while True:
-        attempt += 1
-        try:
-            view = proxy.get_analysis_view(exe_id)
-            return view if isinstance(view, dict) else {}
-        except AudialAPIError as exc:
-            retry = (
-                exc.code == ERROR_ANALYSIS_NOT_READY
-                or exc.status_code is None
-                or (isinstance(exc.status_code, int) and exc.status_code >= 500)
-            )
-            if not retry or attempt >= VIEW_ATTEMPTS:
-                raise
-        time.sleep(poll_interval)
 
 
 # ---------------------------------------------------------------------------
@@ -406,17 +397,3 @@ def _run_addons(analysis_id: str, features: List[str], poll_interval: float,
             problems.append(f"{_addon.LABELS[key]} could not be made: {exc}")
     return problems
 
-
-# ---------------------------------------------------------------------------
-# beat_times / bar_times from the tempo map
-# ---------------------------------------------------------------------------
-
-def _expand_beats(data: Dict[str, Any]) -> None:
-    """Add beat_times and bar_times from `grid` (format 4); older files have their own."""
-    global _EXPANSION_NOTICE_SHOWN
-    if not isinstance(data.get("grid"), dict) or "beat_times" in data:
-        return
-    data["beat_times"], data["bar_times"] = grid.beats_of(data)
-    if not _EXPANSION_NOTICE_SHOWN:
-        _EXPANSION_NOTICE_SHOWN = True
-        warnings.warn(EXPANSION_NOTICE, FutureWarning, stacklevel=3)

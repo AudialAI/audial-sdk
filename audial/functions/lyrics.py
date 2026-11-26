@@ -1,7 +1,6 @@
 """
-Lyrics of an analysis, with word timings: the whole text, timed lines whose
-words carry their own start and end, the lyrics of each section, and when the
-vocals start.
+Lyrics of an analysis, with word timings: timed lines whose words carry their
+own start and end, and when the vocals start.
 
 Also reachable as ``audial.lyrics(analysis_id)``: the ``audial.lyrics`` module
 (the per-note lyric grammar of text2vox) can be called like this function.
@@ -63,25 +62,25 @@ def lyrics(
             starts (see ``audial.warmup``).
 
     Returns:
-        Dict[str, Any]: The lyrics, times in seconds on the track's timeline::
+        Dict[str, Any]: The ``lyrics`` block of the analysis (format 5), times
+        in seconds on the track's timeline::
 
             {
-              "lyrics": "hello there ...",
-              "is_instrumental": False,
+              "vocal_start": 12.34,       # the beat where the vocal starts; None without vocals
               "lines": [
                 {"start": 12.34, "end": 13.10,
                  "words": [["hello", 12.34, 12.71], ["there", 12.80, 13.10]]},
                 ...
               ],
-              "segments": [{"text": "hello there", "start": 12.34, "end": 13.10}, ...],
-              "section_lyrics": ["", "hello there ...", ...],   # one per section
-              "first_vocal_beat_time": 12.34,                   # None without vocals
-              "warnings": []
+              "warnings": []              # from this run
             }
 
-        ``lines`` and every word are ``[word, start, end]``, ready for a
-        karaoke-style highlight. An instrumental has ``is_instrumental`` True
-        and no lines ("No vocals in this track.").
+        Every word is ``[word, start, end]``, ready for a karaoke-style
+        highlight; the text of a line is its words joined. A track without
+        vocals has ``vocal_start`` None and no lines ("No vocals in this
+        track."). A time that is not known (lyrics kept as plain text by an
+        older analysis) is None. ``audial.segment()`` (the merged view) holds
+        the same block under ``lyrics``.
 
     Raises:
         AudialAPIError: ``code == "STEMS_NOT_READY"`` when the stems are still
